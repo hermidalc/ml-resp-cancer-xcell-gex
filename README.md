@@ -30,4 +30,4 @@ install_github("dviraran/xCell")
 ```R
 library(xCell)
 data(xCell.data)
-write.table(sort(xCell.data$genes), file="xCell_symbols.txt", quote=FALSE, row.names=FALSE, col.names=FALSE)
+write.table(sort(xCell.data$genes), file="xcell_symbols.txt", quote=FALSE, row.names=FALSE, col.names=FALSE)
