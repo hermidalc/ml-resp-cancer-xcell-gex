@@ -71,7 +71,7 @@ bc_methods <- c(
     "stica1",
     "svd"
 )
-filter_types <- c(
+filt_types <- c(
     "none",
     "xcell",
     "kdm5a"
