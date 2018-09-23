@@ -4,6 +4,7 @@ dataset_names <- c(
     "gse91061_sd0",
     "gse91061_sd1",
     "vanallen",
+    "tcga_skcm",
     "chen",
     "gse93157",
     "radiation",
@@ -29,6 +30,7 @@ rna_seq_dataset_names <- c(
     "gse91061_sd0",
     "gse91061_sd1",
     "vanallen",
+    "tcga_skcm",
     "ovarian",
     "gse106291"
 )
