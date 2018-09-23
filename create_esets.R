@@ -11,6 +11,7 @@ parser$add_argument("--norm-meth", type="character", nargs="+", help="normalizat
 parser$add_argument("--feat-type", type="character", nargs="+", help="feature type")
 parser$add_argument('--gex-collapse-meth', type="character", default="MaxMean", help="gex collapse rows method")
 args <- parser$parse_args()
+all_dataset_names <- dataset_names
 if (!is.null(args$datasets)) {
     dataset_names <- intersect(dataset_names, args$datasets)
 }
@@ -35,7 +36,7 @@ for (dataset_name in dataset_names) {
                 cat(" Loading:", pdata_file_basename, "\n")
                 pdata <- read.delim(pdata_file, row.names=1)
                 rownames(pdata) <- make.names(rownames(pdata))
-                pdata <- cbind(pdata, rep(which(dataset_name == dataset_names)[1], nrow(pdata)))
+                pdata <- cbind(pdata, rep(which(dataset_name == all_dataset_names)[1], nrow(pdata)))
                 colnames(pdata)[ncol(pdata)] <- "Batch"
                 eset_name <- paste0(c("eset", exprs_file_basename), collapse="_")
                 cat("Creating:", eset_name, "\n")
@@ -63,7 +64,7 @@ for (dataset_name in dataset_names) {
                             cat(" Loading:", pdata_file_basename, "\n")
                             pdata <- read.delim(pdata_file, row.names=1)
                             rownames(pdata) <- make.names(rownames(pdata))
-                            pdata <- cbind(pdata, rep(which(dataset_name == dataset_names)[1], nrow(pdata)))
+                            pdata <- cbind(pdata, rep(which(dataset_name == all_dataset_names)[1], nrow(pdata)))
                             colnames(pdata)[ncol(pdata)] <- "Batch"
                         }
                         eset_name <- paste0(c("eset", exprs_file_basename), collapse="_")
