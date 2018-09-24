@@ -76,7 +76,8 @@ bc_methods <- c(
 filt_types <- c(
     "none",
     "xcell",
-    "kdm5a"
+    "kdm5a",
+    "impres"
 )
 common_pheno_names <- c(
     "Batch",
