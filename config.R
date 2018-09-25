@@ -76,6 +76,7 @@ bc_methods <- c(
 filt_types <- c(
     "none",
     "xcell",
+    "go0002376",
     "kdm5a",
     "impres"
 )
