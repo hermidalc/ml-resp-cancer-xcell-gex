@@ -1,8 +1,11 @@
 # config
 dataset_names <- c(
     "gse78220",
-    "gse91061_sd0",
-    "gse91061_sd1",
+    "gse91061_pre_sd0",
+    "gse91061_pre_sd1",
+    "gse91061_on_sd0",
+    "gse91061_on_sd1",
+    "gse115821",
     "vanallen",
     "tcga_skcm",
     "chen",
@@ -27,8 +30,11 @@ dataset_names <- c(
 )
 rna_seq_dataset_names <- c(
     "gse78220",
-    "gse91061_sd0",
-    "gse91061_sd1",
+    "gse91061_pre_sd0",
+    "gse91061_pre_sd1",
+    "gse91061_on_sd0",
+    "gse91061_on_sd1",
+    "gse115821",
     "vanallen",
     "tcga_skcm",
     "ovarian",
