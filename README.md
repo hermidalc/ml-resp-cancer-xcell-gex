@@ -2,24 +2,17 @@
 
 Using machine learning methods to predict drug response (immunotherapy, chemo, etc) in cancer patients.
 
-1. Install System Dependencies
+1. Install Conda Dependencies
 
 ```bash
-sudo dnf install -y unzip
-```
-2. Install Conda Dependencies
-
-```bash
-conda config --add channels conda-forge
-conda config --add channels bioconda
-conda install -v -y \
-bioconductor-gsva \
-bioconductor-gseabase
+conda install unzip
 ```
 
 3. Install xCell
 
 ```R
+source("https://bioconductor.org/biocLite.R")
+biocLite("GSVA", suppressUpdates=TRUE)
 options(unzip="internal")
 library(devtools)
 install_github("dviraran/xCell")
