@@ -5,6 +5,8 @@ dataset_names <- c(
     "gse91061_pre_sd1",
     "gse91061_on_sd0",
     "gse91061_on_sd1",
+    "gse91061_sd0",
+    "gse91061_sd1",
     "gse115821",
     "vanallen",
     "tcga_skcm",
@@ -48,6 +50,7 @@ needs_log2_dataset_names <- c(
 )
 data_types <- c(
     "gex",
+    "wxs",
     "xcell"
 )
 norm_methods <- c(
@@ -81,10 +84,13 @@ bc_methods <- c(
 )
 filt_types <- c(
     "none",
-    "xcell",
+    "cd8",
     "go0002376",
+    "ifng",
+    "impres",
     "kdm5a",
-    "impres"
+    "pdl1",
+    "xcell"
 )
 common_pheno_names <- c(
     "Batch",

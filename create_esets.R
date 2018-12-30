@@ -29,7 +29,7 @@ for (dataset_name in dataset_names) {
         suffixes <- c(data_type)
         pdata_file_basename <- paste0(c(dataset_name, suffixes, "meta"), collapse="_")
         pdata_file <- paste0("data/", pdata_file_basename, ".txt")
-        if (data_type == "xcell") {
+        if (data_type %in% c("wxs", "xcell")) {
             exprs_file_basename <- paste0(c(dataset_name, suffixes), collapse="_")
             exprs_file <- paste0("data/", exprs_file_basename, ".txt")
             if (file.exists(pdata_file) && file.exists(exprs_file)) {
