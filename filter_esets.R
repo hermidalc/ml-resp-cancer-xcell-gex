@@ -1,5 +1,6 @@
 #!/usr/bin/env Rscript
 
+options(warn=1)
 suppressPackageStartupMessages(library("argparse"))
 suppressPackageStartupMessages(library("Biobase"))
 source("config.R")

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import warnings
+import sys, warnings
 from argparse import ArgumentParser
 from copy import deepcopy
 from os import makedirs, path
@@ -19,10 +19,10 @@ from rpy2.robjects import numpy2ri
 # from rpy2.robjects import pandas2ri
 # import pandas as pd
 from sklearn.base import clone
-from sklearn.feature_selection import (
-    chi2, f_classif, mutual_info_classif, SelectKBest, SelectFpr, SelectFromModel, RFE, VarianceThreshold
+from sklearn.feature_selection import VarianceThreshold
+from sklearn.model_selection import (
+    GridSearchCV, ParameterGrid, RandomizedSearchCV, StratifiedShuffleSplit
 )
-from sklearn.model_selection import GridSearchCV, ParameterGrid, RandomizedSearchCV, StratifiedShuffleSplit
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB
@@ -34,19 +34,24 @@ from sklearn.ensemble import (
 )
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import FunctionTransformer, MinMaxScaler, RobustScaler, StandardScaler
+from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler
 from sklearn.svm import LinearSVC, SVC
-from sklearn.metrics import roc_auc_score, roc_curve, make_scorer
+from sklearn.metrics import make_scorer, roc_auc_score, roc_curve
 from sklearn.externals.joblib import delayed, dump, Memory, Parallel
-from feature_selection import CFS, FCBF, ReliefF
 import seaborn as sns
 import matplotlib.pyplot as plt
-from matplotlib import style
+sys.path.insert(1, sys.path[0] + '/lib/python3')
+from feature_selection import (
+    ANOVAFScorerClassification, CFS, Chi2Scorer, ColumnSelector, FCBF, LimmaScorerClassification,
+    MutualInfoScorerClassification, ReliefF, RFE, SelectFromModel, SelectKBest
+)
 
 # ignore QDA collinearity warnings
 warnings.filterwarnings('ignore', category=UserWarning, message="^Variables are collinear")
 
-# config
+def str_list(arg):
+    return(list(map(str, arg.split(','))))
+
 parser = ArgumentParser()
 parser.add_argument('--analysis', type=int, help='analysis run number')
 parser.add_argument('--test-splits', type=int, default=10, help='num outer splits')
@@ -80,7 +85,10 @@ parser.add_argument('--slr-meth', type=str, nargs='+', help='scaling method')
 parser.add_argument('--clf-meth', type=str, nargs='+', help='classifier method')
 parser.add_argument('--slr-mms-fr-min', type=int, nargs='+', help='slr mms fr min')
 parser.add_argument('--slr-mms-fr-max', type=int, nargs='+', help='slr mms fr max')
+parser.add_argument('--fs-col-names', type=str_list, nargs='+', help='fs feature names')
 parser.add_argument('--fs-vrt-thres', type=float, nargs='+', help='fs vrt threshold')
+parser.add_argument('--fs-mi-n', type=int, nargs='+', help='fs mi n neighbors')
+parser.add_argument('--fs-mi-n-max', type=int, default=20, help='fs mi n neighbors max')
 parser.add_argument('--fs-skb-k', type=int, nargs='+', help='fs skb k select')
 parser.add_argument('--fs-skb-k-min', type=int, default=1, help='fs skb k min')
 parser.add_argument('--fs-skb-k-max', type=int, default=100, help='fs skb k max')
@@ -129,6 +137,8 @@ parser.add_argument('--fs-rfe-grb-d', type=int, nargs='+', help='fs rfe grb max 
 parser.add_argument('--fs-rfe-grb-d-max', type=int, default=10, help='fs rfe grb max depth max')
 parser.add_argument('--fs-rfe-grb-f', type=str, nargs='+', help='fs rfe grb max features')
 parser.add_argument('--fs-rfe-step', type=float, nargs='+', help='fs rfe step')
+parser.add_argument('--fs-rfe-step-one-thres', type=int, default=None, help='fs rfe step one thres')
+parser.add_argument('--fs-rfe-reduce-step', default=False, action='store_true', help='fs rfe reduce step')
 parser.add_argument('--fs-rfe-verbose', type=int, default=0, help='fs rfe verbosity')
 parser.add_argument('--fs-rlf-n', type=int, nargs='+', help='fs rlf n neighbors')
 parser.add_argument('--fs-rlf-n-max', type=int, default=20, help='fs rlf n neighbors max')
@@ -142,7 +152,7 @@ parser.add_argument('--clf-svm-deg', type=int, nargs='+', help='clf svm poly deg
 parser.add_argument('--clf-svm-g', type=str, nargs='+', help='clf svm gamma')
 parser.add_argument('--clf-svm-cache', type=int, default=2000, help='libsvm cache size')
 parser.add_argument('--clf-knn-k', type=int, nargs='+', help='clf knn neighbors')
-parser.add_argument('--clf-knn-k-max', type=int, default=10, help='clf knn neighbors max')
+parser.add_argument('--clf-knn-k-max', type=int, default=20, help='clf knn neighbors max')
 parser.add_argument('--clf-knn-w', type=str, nargs='+', help='clf knn weights')
 parser.add_argument('--clf-dt-d', type=str, nargs='+', help='clf dt max depth')
 parser.add_argument('--clf-dt-d-max', type=int, default=10, help='clf dt max depth max')
@@ -210,14 +220,13 @@ prep_methods = list(robjects.globalenv['prep_methods'])
 bc_methods = list(robjects.globalenv['bc_methods'])
 filt_types = list(robjects.globalenv['filt_types'])
 base.source('functions.R')
-r_eset_class_labels = robjects.globalenv['esetClassLabels']
-r_eset_feature_annots = robjects.globalenv['esetFeatureAnnots']
-r_data_nzero_col_idxs = robjects.globalenv['dataNonZeroColIdxs']
-r_data_nzsd_col_idxs = robjects.globalenv['dataNonZeroSdColIdxs']
-r_data_nzvr_col_idxs = robjects.globalenv['dataNonZeroVarColIdxs']
-r_data_corr_col_idxs = robjects.globalenv['dataCorrColIdxs']
-r_limma_feature_score = robjects.globalenv['limmaFeatureScore']
-r_limma_pkm_feature_score = robjects.globalenv['limmaPkmFeatureScore']
+r_eset_class_labels = robjects.globalenv['eset_class_labels']
+r_eset_feature_idxs = robjects.globalenv['eset_feature_idxs']
+r_eset_feature_annots = robjects.globalenv['eset_feature_annots']
+r_data_nzero_col_idxs = robjects.globalenv['data_nzero_col_idxs']
+r_data_nzsd_col_idxs = robjects.globalenv['data_nzero_sd_col_idxs']
+r_data_nzvr_col_idxs = robjects.globalenv['data_nzero_var_col_idxs']
+r_data_corr_col_idxs = robjects.globalenv['data_corr_col_idxs']
 numpy2ri.activate()
 
 if args.pipe_memory:
@@ -234,6 +243,18 @@ class CachedFitMixin:
         vars(self).update(vars(cached_self))
         return self
 
+class CachedANOVAFScorerClassification(CachedFitMixin, ANOVAFScorerClassification):
+    pass
+
+class CachedChi2Scorer(CachedFitMixin, Chi2Scorer):
+    pass
+
+class CachedLimmaScorerClassification(CachedFitMixin, LimmaScorerClassification):
+    pass
+
+class CachedMutualInfoScorerClassification(CachedFitMixin, MutualInfoScorerClassification):
+    pass
+
 class CachedLinearSVC(CachedFitMixin, LinearSVC):
     pass
 
@@ -245,15 +266,6 @@ class CachedExtraTreesClassifier(CachedFitMixin, ExtraTreesClassifier):
 
 class CachedGradientBoostingClassifier(CachedFitMixin, GradientBoostingClassifier):
     pass
-
-# limma feature selection scoring function
-def limma(X, y):
-    f, pv = r_limma_feature_score(X, y)
-    return np.array(f, dtype=float), np.array(pv, dtype=float)
-
-def limma_pkm(X, y):
-    f, pv = r_limma_pkm_feature_score(X, y)
-    return np.array(f, dtype=float), np.array(pv, dtype=float)
 
 # parallel pipeline fit functions
 def fit_pipeline_1(params, pipe_steps, X, y):
@@ -275,27 +287,25 @@ def fit_pipeline_2(params, pipeline_order, X, y):
 
 # cached functions
 if args.pipe_memory:
-    limma_score_func = memory.cache(limma)
-    limma_pkm_score_func = memory.cache(limma_pkm)
-    chi2_func = memory.cache(chi2)
-    f_classif_func = memory.cache(f_classif)
-    mi_classif_func = memory.cache(mutual_info_classif)
+    fs_anova_scorer = CachedANOVAFScorerClassification()
+    fs_chi2_scorer = CachedChi2Scorer()
+    fs_limma_scorer = CachedLimmaScorerClassification()
+    fs_mi_scorer = CachedMutualInfoScorerClassification(random_state=args.random_seed)
     fs_svm_estimator = CachedLinearSVC(random_state=args.random_seed)
+    fs_svm_sfm_estimator = CachedLinearSVC(penalty='l1', dual=False, random_state=args.random_seed)
     fs_rf_estimator = CachedRandomForestClassifier(random_state=args.random_seed)
     fs_ext_estimator = CachedExtraTreesClassifier(random_state=args.random_seed)
     fs_grb_estimator = CachedGradientBoostingClassifier(random_state=args.random_seed)
-    sfm_svm_estimator = CachedLinearSVC(penalty='l1', dual=False, random_state=args.random_seed)
 else:
-    limma_score_func = limma
-    limma_pkm_score_func = limma_pkm
-    chi2_func = chi2
-    f_classif_func = f_classif
-    mi_classif_func = mutual_info_classif
+    fs_anova_scorer = ANOVAFScorerClassification()
+    fs_chi2_scorer = Chi2Scorer()
+    fs_limma_scorer = LimmaScorerClassification()
+    fs_mi_scorer = MutualInfoScorerClassification(random_state=args.random_seed)
     fs_svm_estimator = LinearSVC(random_state=args.random_seed)
+    fs_svm_sfm_estimator = LinearSVC(penalty='l1', dual=False, random_state=args.random_seed)
     fs_rf_estimator = RandomForestClassifier(random_state=args.random_seed)
     fs_ext_estimator = ExtraTreesClassifier(random_state=args.random_seed)
     fs_grb_estimator = GradientBoostingClassifier(random_state=args.random_seed)
-    sfm_svm_estimator = LinearSVC(penalty='l1', dual=False, random_state=args.random_seed)
 
 # bcr performance metric scoring function
 def bcr_score(y_true, y_pred):
@@ -324,6 +334,10 @@ if args.fs_vrt_thres:
     FS_VRT_THRES = sorted(args.fs_vrt_thres)
 else:
     FS_VRT_THRES = 0.
+if args.fs_mi_n:
+    FS_MI_N = sorted(args.fs_mi_n)
+else:
+    FS_MI_N = list(range(1, args.fs_mi_n_max + 1, 1))
 if args.fs_skb_k:
     FS_SKB_K = sorted(args.fs_skb_k)
 elif args.fs_skb_k_min == 1 and args.fs_skb_k_step > 1:
@@ -715,6 +729,14 @@ pipelines = {
                 { },
             ],
         },
+        'Column': {
+            'steps': [
+                ('fs2', ColumnSelector()),
+            ],
+            'param_grid': [
+                { },
+            ],
+        },
         'VarianceThreshold': {
             'steps': [
                 ('fs2', VarianceThreshold()),
@@ -727,7 +749,7 @@ pipelines = {
         },
         'ANOVA-KBest': {
             'steps': [
-                ('fs1', SelectKBest(f_classif_func)),
+                ('fs1', SelectKBest(fs_anova_scorer)),
             ],
             'param_grid': [
                 {
@@ -737,7 +759,7 @@ pipelines = {
         },
         'Chi2-KBest': {
             'steps': [
-                ('fs1', SelectKBest(chi2_func)),
+                ('fs1', SelectKBest(fs_chi2_scorer)),
             ],
             'param_grid': [
                 {
@@ -747,7 +769,7 @@ pipelines = {
         },
         'Limma-KBest': {
             'steps': [
-                ('fs1', SelectKBest()),
+                ('fs1', SelectKBest(fs_limma_scorer)),
             ],
             'param_grid': [
                 {
@@ -757,17 +779,18 @@ pipelines = {
         },
         'MI-KBest': {
             'steps': [
-                ('fs2', SelectKBest(mi_classif_func)),
+                ('fs2', SelectKBest(fs_mi_scorer)),
             ],
             'param_grid': [
                 {
+                    'fs2__score_func__n_neighbors': FS_MI_N,
                     'fs2__k': FS_SKB_K,
                 },
             ],
         },
         'SVM-SFM-KBest': {
             'steps': [
-                ('fs2', SelectFromModel(sfm_svm_estimator)),
+                ('fs2', SelectFromModel(fs_svm_sfm_estimator)),
             ],
             'param_grid': [
                 {
@@ -820,7 +843,11 @@ pipelines = {
         },
         'SVM-RFE': {
             'steps': [
-                ('fs2', RFE(fs_svm_estimator, verbose=args.fs_rfe_verbose)),
+                ('fs2', RFE(
+                    fs_svm_estimator, reducing_step=args.fs_rfe_reduce_step,
+                    step_one_threshold=args.fs_rfe_step_one_thres,
+                    verbose=args.fs_rfe_verbose
+                )),
             ],
             'param_grid': [
                 {
@@ -833,7 +860,11 @@ pipelines = {
         },
         'RF-RFE': {
             'steps': [
-                ('fs2', RFE(fs_rf_estimator, verbose=args.fs_rfe_verbose)),
+                ('fs2', RFE(
+                    fs_rf_estimator, reducing_step=args.fs_rfe_reduce_step,
+                    step_one_threshold=args.fs_rfe_step_one_thres,
+                    verbose=args.fs_rfe_verbose
+                )),
             ],
             'param_grid': [
                 {
@@ -848,7 +879,11 @@ pipelines = {
         },
         'EXT-RFE': {
             'steps': [
-                ('fs2', RFE(fs_ext_estimator, verbose=args.fs_rfe_verbose)),
+                ('fs2', RFE(
+                    fs_ext_estimator, reducing_step=args.fs_rfe_reduce_step,
+                    step_one_threshold=args.fs_rfe_step_one_thres,
+                    verbose=args.fs_rfe_verbose
+                )),
             ],
             'param_grid': [
                 {
@@ -863,7 +898,11 @@ pipelines = {
         },
         'GRB-RFE': {
             'steps': [
-                ('fs2', RFE(fs_grb_estimator, verbose=args.fs_rfe_verbose)),
+                ('fs2', RFE(
+                    fs_grb_estimator, reducing_step=args.fs_rfe_reduce_step,
+                    step_one_threshold=args.fs_rfe_step_one_thres,
+                    verbose=args.fs_rfe_verbose
+                )),
             ],
             'param_grid': [
                 {
@@ -1061,9 +1100,13 @@ params_feature_select = [
     'fs2__k',
     'fs2__n_features_to_select',
 ]
+params_no_sort = [
+    'fs2__cols',
+]
 params_num_xticks = [
     'fs1__k',
     'fs2__k',
+    'fs2__score_func__n_neighbors',
     'fs2__estimator__n_estimators',
     'fs2__n_neighbors',
     'fs2__sample_size',
@@ -1073,7 +1116,8 @@ params_num_xticks = [
     'clf__n_estimators',
 ]
 params_fixed_xticks = [
-    'fs1__alpha',
+    'fs2__cols',
+    'fs2__alpha',
     'fs2__estimator__C',
     'fs2__estimator__class_weight',
     'fs2__estimator__max_depth',
@@ -1140,36 +1184,37 @@ if args.analysis == 1:
     eset = robjects.globalenv[eset_name]
     X = np.array(base.t(biobase.exprs(eset)), dtype=float)
     y = np.array(r_eset_class_labels(eset), dtype=int)
-    if args.filt_zero_feats:
-        nzero_feature_idxs = np.array(r_data_nzero_col_idxs(X), dtype=int)
-        X = X[:, nzero_feature_idxs]
+    if args.fs_meth != 'Column':
+        if args.filt_zero_feats:
+            nzero_feature_idxs = np.array(r_data_nzero_col_idxs(X), dtype=int)
+            X = X[:, nzero_feature_idxs]
+        if args.filt_zsdv_feats:
+            nzsd_feature_idxs = np.array(r_data_nzsd_col_idxs(X), dtype=int)
+            X = X[:, nzsd_feature_idxs]
+        if args.filt_nzvr_feats:
+            nzvr_feature_idxs = np.array(r_data_nzvr_col_idxs(
+                X, freqCut=args.filt_nzvr_feat_freq_cut, uniqueCut=args.filt_nzvr_feat_uniq_cut
+            ), dtype=int)
+            X = X[:, nzvr_feature_idxs]
+        if args.filt_ncor_feats:
+            corr_feature_idxs = np.array(
+                r_data_corr_col_idxs(X, cutoff=args.filt_ncor_feat_cut), dtype=int
+            )
+            X = X[:, corr_feature_idxs]
     if args.filt_zero_samples:
         nzero_sample_idxs = np.array(r_data_nzero_col_idxs(X.T), dtype=int)
         X = X[nzero_sample_idxs, :]
         y = y[nzero_sample_idxs]
-    if args.filt_zsdv_feats:
-        nzsd_feature_idxs = np.array(r_data_nzsd_col_idxs(X), dtype=int)
-        X = X[:, nzsd_feature_idxs]
     if args.filt_zsdv_samples:
         nzsd_sample_idxs = np.array(r_data_nzsd_col_idxs(X.T), dtype=int)
         X = X[nzsd_sample_idxs, :]
         y = y[nzsd_sample_idxs]
-    if args.filt_nzvr_feats:
-        nzvr_feature_idxs = np.array(r_data_nzvr_col_idxs(
-            X, freqCut=args.filt_nzvr_feat_freq_cut, uniqueCut=args.filt_nzvr_feat_uniq_cut
-        ), dtype=int)
-        X = X[:, nzvr_feature_idxs]
     if args.filt_nzvr_samples:
         nzvr_sample_idxs = np.array(r_data_nzvr_col_idxs(
             X.T, freqCut=args.filt_nzvr_sample_freq_cut, uniqueCut=args.filt_nzvr_sample_uniq_cut
         ), dtype=int)
         X = X[nzvr_sample_idxs, :]
         y = y[nzvr_sample_idxs]
-    if args.filt_ncor_feats:
-        corr_feature_idxs = np.array(
-            r_data_corr_col_idxs(X, cutoff=args.filt_ncor_feat_cut), dtype=int
-        )
-        X = X[:, corr_feature_idxs]
     if args.filt_ncor_samples:
         corr_sample_idxs = np.array(
             r_data_corr_col_idxs(X.T, cutoff=args.filt_ncor_sample_cut), dtype=int
@@ -1188,11 +1233,6 @@ if args.analysis == 1:
         **pipelines['fs'][args.fs_meth]['param_grid'][0],
         **pipelines['clf'][args.clf_meth]['param_grid'][0],
     }
-    if args.fs_meth == 'Limma-KBest':
-        if norm_meth and norm_meth in ['pkm', 'ppm']:
-            pipe.set_params(fs1__score_func=limma_pkm_score_func)
-        else:
-            pipe.set_params(fs1__score_func=limma_score_func)
     for param in param_grid:
         if param in params_feature_select:
             param_grid[param] = list(filter(
@@ -1202,6 +1242,16 @@ if args.analysis == 1:
                 ),
                 param_grid[param]
             ))
+    if args.fs_meth == 'Column':
+        param_grid['fs2__cols'] = [
+            sorted(np.array(r_eset_feature_idxs(eset, features=col_names), dtype=int))
+            for col_names in args.fs_col_names
+        ]
+    elif args.fs_meth == 'Limma-KBest':
+        if norm_meth and norm_meth in ['pkm', 'ppm']:
+            pipe.set_params(fs1__score_func__pkm=True)
+        else:
+            pipe.set_params(fs1__score_func__pkm=False)
     scv_refit = False if args.fs_meth in ['FCBF', 'ReliefF', 'CFS'] else args.scv_refit
     if args.scv_type == 'grid':
         search = GridSearchCV(
@@ -1327,9 +1377,12 @@ if args.analysis == 1:
                 int(len(search.cv_results_['params']) / len(param_values))
             )
             param_values_cv = np.ma.getdata(search.cv_results_['param_%s' % param])
-            param_values_cv_sorted_idxs = np.where(
-                np.array(param_values).reshape(len(param_values), 1) == param_values_cv
-            )[1]
+            if param not in params_no_sort:
+                param_values_cv_sorted_idxs = np.where(
+                    np.array(param_values).reshape(len(param_values), 1) == param_values_cv
+                )[1]
+            else:
+                param_values_cv_sorted_idxs = np.arange(param_values_cv.shape[0])
             if param not in param_scores_cv: param_scores_cv[param] = {}
             for metric in scv_scoring.keys():
                 if args.scv_h_plt_meth == 'best':
@@ -1556,36 +1609,37 @@ elif args.analysis == 2:
     eset_tr = robjects.globalenv[eset_tr_name]
     X_tr = np.array(base.t(biobase.exprs(eset_tr)), dtype=float)
     y_tr = np.array(r_eset_class_labels(eset_tr), dtype=int)
-    if args.filt_zero_feats:
-        nzero_feature_idxs = np.array(r_data_nzero_col_idxs(X_tr), dtype=int)
-        X_tr = X_tr[:, nzero_feature_idxs]
+    if args.fs_meth != 'Column':
+        if args.filt_zero_feats:
+            nzero_feature_idxs = np.array(r_data_nzero_col_idxs(X_tr), dtype=int)
+            X_tr = X_tr[:, nzero_feature_idxs]
+        if args.filt_zsdv_feats:
+            nzsd_feature_idxs = np.array(r_data_nzsd_col_idxs(X_tr), dtype=int)
+            X_tr = X_tr[:, nzsd_feature_idxs]
+        if args.filt_nzvr_feats:
+            nzvr_feature_idxs = np.array(r_data_nzvr_col_idxs(
+                X_tr, freqCut=args.filt_nzvr_feat_freq_cut, uniqueCut=args.filt_nzvr_feat_uniq_cut
+            ), dtype=int)
+            X_tr = X_tr[:, nzvr_feature_idxs]
+        if args.filt_ncor_feats:
+            corr_feature_idxs = np.array(
+                r_data_corr_col_idxs(X_tr, cutoff=args.filt_ncor_feat_cut), dtype=int
+            )
+            X_tr = X_tr[:, corr_feature_idxs]
     if args.filt_zero_samples:
         nzero_sample_idxs = np.array(r_data_nzero_col_idxs(X_tr.T), dtype=int)
         X_tr = X_tr[nzero_sample_idxs, :]
         y_tr = y_tr[nzero_sample_idxs]
-    if args.filt_zsdv_feats:
-        nzsd_feature_idxs = np.array(r_data_nzsd_col_idxs(X_tr), dtype=int)
-        X_tr = X_tr[:, nzsd_feature_idxs]
     if args.filt_zsdv_samples:
         nzsd_sample_idxs = np.array(r_data_nzsd_col_idxs(X_tr.T), dtype=int)
         X_tr = X_tr[nzsd_sample_idxs, :]
         y_tr = y_tr[nzsd_sample_idxs]
-    if args.filt_nzvr_feats:
-        nzvr_feature_idxs = np.array(r_data_nzvr_col_idxs(
-            X_tr, freqCut=args.filt_nzvr_feat_freq_cut, uniqueCut=args.filt_nzvr_feat_uniq_cut
-        ), dtype=int)
-        X_tr = X_tr[:, nzvr_feature_idxs]
     if args.filt_nzvr_samples:
         nzvr_sample_idxs = np.array(r_data_nzvr_col_idxs(
             X_tr.T, freqCut=args.filt_nzvr_sample_freq_cut, uniqueCut=args.filt_nzvr_sample_uniq_cut
         ), dtype=int)
         X_tr = X_tr[nzvr_sample_idxs, :]
         y_tr = y_tr[nzvr_sample_idxs]
-    if args.filt_ncor_feats:
-        corr_feature_idxs = np.array(
-            r_data_corr_col_idxs(X_tr, cutoff=args.filt_ncor_feat_cut), dtype=int
-        )
-        X_tr = X_tr[:, corr_feature_idxs]
     if args.filt_ncor_samples:
         corr_sample_idxs = np.array(
             r_data_corr_col_idxs(X_tr.T, cutoff=args.filt_ncor_sample_cut), dtype=int
@@ -1603,11 +1657,6 @@ elif args.analysis == 2:
         **pipelines['fs'][args.fs_meth]['param_grid'][0],
         **pipelines['clf'][args.clf_meth]['param_grid'][0],
     }
-    if args.fs_meth == 'Limma-KBest':
-        if norm_meth and norm_meth in ['pkm', 'ppm']:
-            pipe.set_params(fs1__score_func=limma_pkm_score_func)
-        else:
-            pipe.set_params(fs1__score_func=limma_score_func)
     for param in param_grid:
         if param in params_feature_select:
             param_grid[param] = list(filter(
@@ -1617,6 +1666,16 @@ elif args.analysis == 2:
                 ),
                 param_grid[param]
             ))
+    if args.fs_meth == 'Column':
+        param_grid['fs2__cols'] = [
+            sorted(np.array(r_eset_feature_idxs(eset_tr, features=col_names), dtype=int))
+            for col_names in args.fs_col_names
+        ]
+    elif args.fs_meth == 'Limma-KBest':
+        if norm_meth and norm_meth in ['pkm', 'ppm']:
+            pipe.set_params(fs1__score_func__pkm=True)
+        else:
+            pipe.set_params(fs1__score_func__pkm=False)
     if args.scv_type == 'grid':
         search = GridSearchCV(
             pipe, param_grid=param_grid, scoring=scv_scoring, refit=args.scv_refit, iid=False,
@@ -1718,9 +1777,12 @@ elif args.analysis == 2:
             int(len(search.cv_results_['params']) / len(param_values))
         )
         param_values_cv = np.ma.getdata(search.cv_results_['param_%s' % param])
-        param_values_cv_sorted_idxs = np.where(
-            np.array(param_values).reshape(len(param_values), 1) == param_values_cv
-        )[1]
+        if param not in params_no_sort:
+            param_values_cv_sorted_idxs = np.where(
+                np.array(param_values).reshape(len(param_values), 1) == param_values_cv
+            )[1]
+        else:
+            param_values_cv_sorted_idxs = np.arange(param_values_cv.shape[0])
         plt.figure('Figure ' + str(args.analysis) + '-' + str(num_figures + 1))
         plt.rcParams['font.size'] = 14
         if param in params_num_xticks:
@@ -2087,9 +2149,9 @@ elif args.analysis == 3:
                         for (step, object) in fs_meth_pipeline['steps']:
                             if object.__class__.__name__ == 'SelectKBest':
                                 if prep_group_info[pr_idx]['pkm']:
-                                    object.set_params(score_func=limma_pkm_score_func)
+                                    object.set_params(score_func__pkm=True)
                                 else:
-                                    object.set_params(score_func=limma_score_func)
+                                    object.set_params(score_func__pkm=False)
                     for fs_params in fs_meth_pipeline['param_grid']:
                         for param in fs_params:
                             if param in params_feature_select:
@@ -2143,9 +2205,9 @@ elif args.analysis == 3:
                 }
                 if args.fs_meth == 'Limma-KBest':
                     if prep_group_info[pr_idx]['pkm']:
-                        pipe.set_params(fs1__score_func=limma_pkm_score_func)
+                        pipe.set_params(fs1__score_func__pkm=True)
                     else:
-                        pipe.set_params(fs1__score_func=limma_score_func)
+                        pipe.set_params(fs1__score_func__pkm=False)
                 for param in param_grid:
                     if param in params_feature_select:
                         param_grid[param] = list(filter(
@@ -2664,9 +2726,9 @@ elif args.analysis == 4:
                             for (step, object) in fs_meth_pipeline['steps']:
                                 if object.__class__.__name__ == 'SelectKBest':
                                     if prep_group_info[pr_idx]['pkm']:
-                                        object.set_params(score_func=limma_pkm_score_func)
+                                        object.set_params(score_func__pkm=True)
                                     else:
-                                        object.set_params(score_func=limma_score_func)
+                                        object.set_params(score_func__pkm=False)
                         for fs_params in fs_meth_pipeline['param_grid']:
                             for param in fs_params:
                                 if param in params_feature_select:
@@ -2720,9 +2782,9 @@ elif args.analysis == 4:
                     }
                     if args.fs_meth == 'Limma-KBest':
                         if prep_group_info[pr_idx]['pkm']:
-                            pipe.set_params(fs1__score_func=limma_pkm_score_func)
+                            pipe.set_params(fs1__score_func__pkm=True)
                         else:
-                            pipe.set_params(fs1__score_func=limma_score_func)
+                            pipe.set_params(fs1__score_func__pkm=False)
                     for param in param_grid:
                         if param in params_feature_select:
                             param_grid[param] = list(filter(
