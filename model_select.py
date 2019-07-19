@@ -209,7 +209,7 @@ if args.test_size >= 1.0: args.test_size = int(args.test_size)
 if args.scv_size >= 1.0: args.scv_size = int(args.scv_size)
 
 if args.parallel_backend == 'multiprocessing':
-    # ignore sklearn >=0.20 LinearSVC convergence warnings
+    # ignore sklearn >= 0.20 LinearSVC convergence warnings
     warnings.filterwarnings('ignore', category=ConvergenceWarning,
                             message="^Liblinear failed to converge",
                             module='sklearn.svm.base')
@@ -1267,7 +1267,7 @@ if args.analysis == 1:
             for col_names in args.fs_col_names
         ]
     elif args.fs_meth == 'Limma-KBest':
-        if norm_meth and norm_meth in ['pkm', 'ppm']:
+        if norm_meth and norm_meth in ['pkm', 'tpm', 'ppm']:
             pipe.set_params(fs1__score_func__pkm=True)
         else:
             pipe.set_params(fs1__score_func__pkm=False)
@@ -1697,7 +1697,7 @@ elif args.analysis == 2:
             for col_names in args.fs_col_names
         ]
     elif args.fs_meth == 'Limma-KBest':
-        if norm_meth and norm_meth in ['pkm', 'ppm']:
+        if norm_meth and norm_meth in ['pkm', 'tpm', 'ppm']:
             pipe.set_params(fs1__score_func__pkm=True)
         else:
             pipe.set_params(fs1__score_func__pkm=False)
@@ -2033,7 +2033,7 @@ elif args.analysis == 3:
                                 ] if x not in ('None', 'none')
                             ])
                             prep_group_info.append({
-                                'pkm': True if norm_meth in ['pkm', 'ppm'] else False,
+                                'pkm': True if norm_meth in ['pkm', 'tpm', 'ppm'] else False,
                                 'mrg': True if prep_meth == 'mrg' else False,
                                 'bcm': True if bc_meth not in ('None', 'none') else False,
                             })
@@ -2564,7 +2564,7 @@ elif args.analysis == 4:
                                 ] if x not in ('None', 'none')
                             ])
                             prep_group_info.append({
-                                'pkm': True if norm_meth in ['pkm', 'ppm'] else False,
+                                'pkm': True if norm_meth in ['pkm', 'tpm', 'ppm'] else False,
                                 'mrg': True if prep_meth == 'mrg' else False,
                                 'bcm': True if bc_meth not in ('None', 'none') else False,
                             })
