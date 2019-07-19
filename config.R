@@ -1,22 +1,8 @@
 # config
 dataset_names <- c(
-    "gse78220",
-    "gse91061_pre_sd0",
-    "gse91061_pre_sd1",
-    "gse91061_on_sd0",
-    "gse91061_on_sd1",
-    "gse91061_sd0",
-    "gse91061_sd1",
-    "gse115821",
-    "vanallen",
-    "tcga_skcm",
     "chen",
-    "gse93157",
-    "radiation",
-    "ovarian",
-    "gse103668",
-    "gse106291",
-    "gse106977",
+    "gse5462",
+    "gse6434",
     "gse22513",
     "gse25055",
     "gse28796",
@@ -24,29 +10,54 @@ dataset_names <- c(
     "gse35935",
     "gse37645",
     "gse45670",
-    "gse5462",
     "gse60331",
-    "gse6434",
     "gse76360",
-    "gse93375"
-)
-rna_seq_dataset_names <- c(
     "gse78220",
+    "gse91061_sd0",
+    "gse91061_sd1",
     "gse91061_pre_sd0",
     "gse91061_pre_sd1",
     "gse91061_on_sd0",
     "gse91061_on_sd1",
+    "gse93157",
+    "gse93375",
+    "gse103668",
+    "gse106291",
+    "gse106977",
     "gse115821",
-    "vanallen",
-    "tcga_skcm",
+    "gse121810",
+    "gse123728",
+    "miao",
     "ovarian",
-    "gse106291"
+    "radiation",
+    "schalper",
+    "tcga_skcm",
+    "vanallen",
+    "zhao"
+)
+rna_seq_dataset_names <- c(
+    "gse78220",
+    "gse91061_sd0",
+    "gse91061_sd1",
+    "gse91061_on_sd0",
+    "gse91061_on_sd1",
+    "gse91061_pre_sd0",
+    "gse91061_pre_sd1",
+    "gse106291",
+    "gse115821",
+    "gse121810",
+    "miao",
+    "ovarian",
+    "tcga_skcm",
+    "vanallen",
+    "zhao"
 )
 needs_log2_dataset_names <- c(
+    "gse5462",
+    "gse6434",
     "gse37645",
     "gse45670",
-    "gse5462",
-    "gse6434"
+    "schalper"
 )
 data_types <- c(
     "gex",
@@ -55,7 +66,8 @@ data_types <- c(
 )
 norm_methods <- c(
     "none",
-    "pkm"
+    "pkm",
+    "tpm"
 )
 feat_types <- c(
     "none",
@@ -89,6 +101,7 @@ filt_types <- c(
     "ifng",
     "impres",
     "kdm5a",
+    "kleg",
     "pdl1",
     "xcell"
 )
