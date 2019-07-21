@@ -1434,7 +1434,7 @@ if args.analysis == 1:
                         else:
                             param_scores_cv[param][metric] = split_scores_cv
         split_results.append({
-            'search': search,
+            'model': search if args.save_model else None,
             'feature_idxs': feature_idxs,
             'feature_names': feature_names,
             'fprs': fpr,
