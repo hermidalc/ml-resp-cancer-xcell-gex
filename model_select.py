@@ -13,19 +13,18 @@ from itertools import combinations
 from operator import itemgetter
 from joblib import delayed, dump, Memory, Parallel, parallel_backend
 import numpy as np
+# import pandas as pd
 import rpy2.rinterface as rinterface
 rinterface.set_initoptions((b'rpy2', b'--quiet', b'--no-save', b'--max-ppsize=500000'))
 import rpy2.robjects as robjects
 from rpy2.robjects.packages import importr
 from rpy2.robjects import numpy2ri
 # from rpy2.robjects import pandas2ri
-# import pandas as pd
 from sklearn.base import clone
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.model_selection import (
-    GridSearchCV, ParameterGrid, RandomizedSearchCV, StratifiedShuffleSplit
-)
+    GridSearchCV, ParameterGrid, RandomizedSearchCV, StratifiedShuffleSplit)
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB
@@ -33,13 +32,15 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.gaussian_process import GaussianProcessClassifier
 from sklearn.ensemble import (
-    AdaBoostClassifier, ExtraTreesClassifier, GradientBoostingClassifier, RandomForestClassifier
-)
+    AdaBoostClassifier, ExtraTreesClassifier, GradientBoostingClassifier,
+    RandomForestClassifier)
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler
 from sklearn.svm import LinearSVC, SVC
-from sklearn.metrics import make_scorer, roc_auc_score, roc_curve
+from sklearn.metrics import (
+    auc, average_precision_score, balanced_accuracy_score, make_scorer,
+    precision_recall_curve, roc_auc_score, roc_curve)
 import seaborn as sns
 import matplotlib.pyplot as plt
 sys.path.insert(1, sys.path[0] + '/lib/python3')
@@ -149,6 +150,7 @@ parser.add_argument('--clf-svm-cw', type=str, nargs='+', help='clf svm class wei
 parser.add_argument('--clf-svm-kern', type=str, nargs='+', help='clf svm kernel')
 parser.add_argument('--clf-svm-deg', type=int, nargs='+', help='clf svm poly degree')
 parser.add_argument('--clf-svm-g', type=str, nargs='+', help='clf svm gamma')
+parser.add_argument('--clf-svm-tol', type=float, default=1e-4, help='clf svm tol')
 parser.add_argument('--clf-svm-cache', type=int, default=2000, help='libsvm cache size')
 parser.add_argument('--clf-knn-k', type=int, nargs='+', help='clf knn neighbors')
 parser.add_argument('--clf-knn-k-max', type=int, default=20, help='clf knn neighbors max')
@@ -187,7 +189,7 @@ parser.add_argument('--scv-type', type=str, default='grid', help='scv type (grid
 parser.add_argument('--scv-splits', type=int, default=100, help='scv splits')
 parser.add_argument('--scv-size', type=float, default=0.2, help='scv size')
 parser.add_argument('--scv-verbose', type=int, default=1, help='scv verbosity')
-parser.add_argument('--scv-refit', type=str, default='roc_auc', help='scv refit score func (roc_auc, bcr)')
+parser.add_argument('--scv-refit', type=str, default='roc_auc', help='scv refit score func (roc_auc, avg_pre, bcr)')
 parser.add_argument('--scv-n-iter', type=int, default=100, help='randomized scv num iterations')
 parser.add_argument('--scv-h-plt-meth', type=str, default='best', help='scv hyperparam plot meth (best, all)')
 parser.add_argument('--show-annots', type=str, nargs='+', help='show annotations')
@@ -203,28 +205,33 @@ parser.add_argument('--pipe-memory', default=False, action='store_true', help='t
 parser.add_argument('--cache-dir', type=str, default='/tmp', help='cache dir')
 parser.add_argument('--random-seed', type=int, default=19825791, help='random state seed')
 parser.add_argument('--jvm-heap-size', type=int, default=1000, help='rjava jvm heap size')
+parser.add_argument('--filter-warnings', default=False, action='store_true', help='filter warnings')
 parser.add_argument('--verbose', type=int, default=0, help='program verbosity')
 args = parser.parse_args()
 if args.test_size >= 1.0: args.test_size = int(args.test_size)
 if args.scv_size >= 1.0: args.scv_size = int(args.scv_size)
-
-if args.parallel_backend == 'multiprocessing':
-    # ignore sklearn >= 0.20 LinearSVC convergence warnings
-    warnings.filterwarnings('ignore', category=ConvergenceWarning,
-                            message="^Liblinear failed to converge",
-                            module='sklearn.svm.base')
-    # ignore QDA collinearity warnings
-    warnings.filterwarnings('ignore', category=UserWarning,
-                            message="^Variables are collinear")
-else:
-    os.environ['PYTHONWARNINGS'] = (
-        'ignore:Liblinear failed to converge:UserWarning:sklearn.svm.base,' +
-        'ignore:Variables are collinear:UserWarning:sklearn.discriminant_analysis')
+if args.scv_refit == 'avg_pre': args.scv_refit = 'average_precision'
+elif args.scv_refit == 'bcr': args.scv_refit = 'balanced_accuracy'
 
 
-base = importr('base')
-biobase = importr('Biobase')
-base.source('config.R')
+if args.filter_warnings:
+    if args.parallel_backend == 'multiprocessing':
+        # ignore sklearn >= 0.20 LinearSVC convergence warnings
+        warnings.filterwarnings('ignore', category=ConvergenceWarning,
+                                message="^Liblinear failed to converge",
+                                module='sklearn.svm.base')
+        # ignore QDA collinearity warnings
+        warnings.filterwarnings('ignore', category=UserWarning,
+                                message="^Variables are collinear")
+    else:
+        os.environ['PYTHONWARNINGS'] = (
+            'ignore:Liblinear failed to converge:UserWarning:sklearn.svm.base,' +
+            'ignore:Variables are collinear:UserWarning:sklearn.discriminant_analysis')
+
+
+r_base = importr('base')
+r_biobase = importr('Biobase')
+r_base.source('config.R')
 robjects.r('set.seed(' + str(args.random_seed) + ')')
 robjects.r('options(\'java.parameters\'="-Xmx' + str(args.jvm_heap_size) + 'm")')
 dataset_names = list(robjects.globalenv['dataset_names'])
@@ -234,7 +241,7 @@ feat_types = list(robjects.globalenv['feat_types'])
 prep_methods = list(robjects.globalenv['prep_methods'])
 bc_methods = list(robjects.globalenv['bc_methods'])
 filt_types = list(robjects.globalenv['filt_types'])
-base.source('functions.R')
+r_base.source('functions.R')
 r_eset_class_labels = robjects.globalenv['eset_class_labels']
 r_eset_feature_idxs = robjects.globalenv['eset_feature_idxs']
 r_eset_feature_annots = robjects.globalenv['eset_feature_annots']
@@ -306,8 +313,8 @@ if args.pipe_memory:
     fs_chi2_scorer = CachedChi2Scorer()
     fs_limma_scorer = CachedLimmaScorerClassification()
     fs_mi_scorer = CachedMutualInfoScorerClassification(random_state=args.random_seed)
-    fs_svm_estimator = CachedLinearSVC(random_state=args.random_seed)
-    fs_svm_sfm_estimator = CachedLinearSVC(penalty='l1', dual=False, random_state=args.random_seed)
+    fs_svm_estimator = CachedLinearSVC(random_state=args.random_seed, tol=args.clf_svm_tol)
+    fs_svm_sfm_estimator = CachedLinearSVC(penalty='l1', dual=False, random_state=args.random_seed, tol=args.clf_svm_tol)
     fs_rf_estimator = CachedRandomForestClassifier(random_state=args.random_seed)
     fs_ext_estimator = CachedExtraTreesClassifier(random_state=args.random_seed)
     fs_grb_estimator = CachedGradientBoostingClassifier(random_state=args.random_seed)
@@ -316,35 +323,36 @@ else:
     fs_chi2_scorer = Chi2Scorer()
     fs_limma_scorer = LimmaScorerClassification()
     fs_mi_scorer = MutualInfoScorerClassification(random_state=args.random_seed)
-    fs_svm_estimator = LinearSVC(random_state=args.random_seed)
-    fs_svm_sfm_estimator = LinearSVC(penalty='l1', dual=False, random_state=args.random_seed)
+    fs_svm_estimator = LinearSVC(random_state=args.random_seed, tol=args.clf_svm_tol)
+    fs_svm_sfm_estimator = LinearSVC(penalty='l1', dual=False, random_state=args.random_seed, tol=args.clf_svm_tol)
     fs_rf_estimator = RandomForestClassifier(random_state=args.random_seed)
     fs_ext_estimator = ExtraTreesClassifier(random_state=args.random_seed)
     fs_grb_estimator = GradientBoostingClassifier(random_state=args.random_seed)
 
-# bcr performance metric scoring function
-def bcr_score(y_true, y_pred):
-    tp = np.sum(np.logical_and(y_pred == 1, y_true == 1))
-    tn = np.sum(np.logical_and(y_pred == 0, y_true == 0))
-    fp = np.sum(np.logical_and(y_pred == 1, y_true == 0))
-    fn = np.sum(np.logical_and(y_pred == 0, y_true == 1))
-    mes1 = (tp + fn)
-    mes2 = (tn + fp)
-    # if only one class
-    if mes2 == 0:
-        return tp / mes1
-    elif mes1 == 0:
-        return tn / mes2
-    else:
-        return (tp / mes1 + tn / mes2) / 2
+# # bcr performance metric scoring function
+# def bcr_score(y_true, y_pred):
+#     tp = np.sum(np.logical_and(y_pred == 1, y_true == 1))
+#     tn = np.sum(np.logical_and(y_pred == 0, y_true == 0))
+#     fp = np.sum(np.logical_and(y_pred == 1, y_true == 0))
+#     fn = np.sum(np.logical_and(y_pred == 0, y_true == 1))
+#     mes1 = (tp + fn)
+#     mes2 = (tn + fp)
+#     # if only one class
+#     if mes2 == 0:
+#         return tp / mes1
+#     elif mes1 == 0:
+#         return tn / mes2
+#     else:
+#         return (tp / mes1 + tn / mes2) / 2
 
-scv_scoring = { 'roc_auc': 'roc_auc', 'bcr': make_scorer(bcr_score) }
+# scv_scoring = { 'roc_auc': 'roc_auc', 'bcr': make_scorer(bcr_score) }
+scv_scoring = ['roc_auc', 'average_precision', 'balanced_accuracy']
 
 # specify elements in sort order (needed by code dealing with gridsearch cv_results)
 if args.slr_mms_fr_min and args.slr_mms_fr_max:
     SLR_MMS_FR = list(zip(args.slr_mms_fr_min, args.slr_mms_fr_max))
 else:
-    SLR_MMS_FR = [(0,1)]
+    SLR_MMS_FR = [(0, 1)]
 if args.fs_vrt_thres:
     FS_VRT_THRES = sorted(args.fs_vrt_thres)
 else:
@@ -454,7 +462,7 @@ else:
 if args.fs_rfe_svm_c:
     FS_RFE_SVM_C = sorted(args.fs_rfe_svm_c)
 else:
-    FS_RFE_SVM_C = np.logspace(-7, 3, 11)
+    FS_RFE_SVM_C = np.logspace(-5, 5, 11)
 if args.fs_rfe_svm_cw:
     FS_RFE_SVM_CW = sorted(
         [None if a in ('None', 'none') else a for a in args.fs_rfe_svm_cw],
@@ -542,7 +550,7 @@ else:
 if args.clf_svm_c:
     CLF_SVM_C = sorted(args.clf_svm_c)
 else:
-    CLF_SVM_C = np.logspace(-7, 3, 11)
+    CLF_SVM_C = np.logspace(-5, 5, 11)
 if args.clf_svm_cw:
     CLF_SVM_CW = sorted(
         [None if a in ('None', 'none') else a for a in args.clf_svm_cw],
@@ -561,7 +569,7 @@ else:
 if args.clf_svm_g:
     CLF_SVM_G = sorted(args.clf_svm_g)
 else:
-    CLF_SVM_G = ['auto'] + list(np.logspace(-7, 3, 11))
+    CLF_SVM_G = ['auto'] + list(np.logspace(-5, 5, 11))
 if args.clf_knn_k:
     CLF_KNN_K = sorted(args.clf_knn_k)
 else:
@@ -648,7 +656,7 @@ else:
 if args.clf_ada_lgr_c:
     CLF_ADA_LGR_C = sorted(args.clf_ada_lgr_c)
 else:
-    CLF_ADA_LGR_C = np.logspace(-7, 3, 11)
+    CLF_ADA_LGR_C = np.logspace(-5, 5, 11)
 if args.clf_ada_lgr_cw:
     CLF_ADA_LGR_CW = sorted(
         [None if a in ('None', 'none') else a for a in args.clf_ada_lgr_cw],
@@ -686,7 +694,7 @@ else:
 if args.clf_mlp_a:
     CLF_MLP_A = sorted(args.clf_mlp_a)
 else:
-    CLF_MLP_A = np.logspace(-7, 3, 11)
+    CLF_MLP_A = np.logspace(-5, 5, 11)
 if args.clf_mlp_lr:
     CLF_MLP_LR = sorted(args.clf_mlp_lr)
 else:
@@ -967,7 +975,7 @@ pipelines = {
     'clf': {
         'LinearSVM': {
             'steps': [
-                ('clf', LinearSVC(random_state=args.random_seed)),
+                ('clf', LinearSVC(random_state=args.random_seed, tol=args.clf_svm_tol)),
             ],
             'param_grid': [
                 {
@@ -1197,11 +1205,11 @@ if args.analysis == 1:
     eset_name = 'eset_' + dataset_name
     eset_file = 'data/' + eset_name + '.Rda'
     if os.path.isfile(eset_file):
-        base.load('data/' + eset_name + '.Rda')
+        r_base.load('data/' + eset_name + '.Rda')
     else:
         exit('File does not exist or invalid: ' + eset_file)
     eset = robjects.globalenv[eset_name]
-    X = np.array(base.t(biobase.exprs(eset)), dtype=float)
+    X = np.array(r_base.t(r_biobase.exprs(eset)), dtype=float)
     y = np.array(r_eset_class_labels(eset), dtype=int)
     if args.fs_meth != 'Column':
         if args.filt_zero_feats:
@@ -1267,10 +1275,10 @@ if args.analysis == 1:
             for col_names in args.fs_col_names
         ]
     elif args.fs_meth == 'Limma-KBest':
-        if norm_meth and norm_meth in ['pkm', 'tpm', 'ppm']:
-            pipe.set_params(fs1__score_func__pkm=True)
+        if norm_meth and norm_meth in ['fpkm', 'rpkm', 'tpm', 'ppm']:
+            pipe.set_params(fs1__score_func__trend=True)
         else:
-            pipe.set_params(fs1__score_func__pkm=False)
+            pipe.set_params(fs1__score_func__trend=False)
     scv_refit = False if args.fs_meth in ['FCBF', 'ReliefF', 'CFS'] else args.scv_refit
     if args.scv_type == 'grid':
         search = GridSearchCV(
@@ -1293,7 +1301,9 @@ if args.analysis == 1:
         pprint(vars(pipe))
         print('Param grid:')
         pprint(param_grid)
-    print('Dataset:', dataset_name, X.shape, y.shape)
+    dataset_dim_str = '[' + str(X.shape[0]) + ' x ' + str(X.shape[1]) + ']'
+    if args.verbose > 0 or args.scv_verbose > 0:
+        print('Dataset:', dataset_name, dataset_dim_str)
     split_num = 1
     split_results = []
     param_scores_cv = {}
@@ -1319,7 +1329,7 @@ if args.analysis == 1:
         for step in search_best_estimator.named_steps:
             if hasattr(search_best_estimator.named_steps[step], 'get_support'):
                 feature_idxs = feature_idxs[search_best_estimator.named_steps[step].get_support(indices=True)]
-        feature_names = np.array(biobase.featureNames(eset), dtype=str)[feature_idxs]
+        feature_names = np.array(r_biobase.featureNames(eset), dtype=str)[feature_idxs]
         weights = np.array([], dtype=float)
         if hasattr(search_best_estimator.named_steps['clf'], 'coef_'):
             weights = np.square(search_best_estimator.named_steps['clf'].coef_[0])
@@ -1334,23 +1344,30 @@ if args.analysis == 1:
             elif hasattr(search_best_estimator.named_steps['fs2'], 'feature_importances_'):
                 weights = search_best_estimator.named_steps['fs2'].feature_importances_
         roc_auc_cv = search.cv_results_['mean_test_roc_auc'][search_best_index]
-        bcr_cv = search.cv_results_['mean_test_bcr'][search_best_index]
+        avg_pre_cv = search.cv_results_['mean_test_average_precision'][search_best_index]
+        bcr_cv = search.cv_results_['mean_test_balanced_accuracy'][search_best_index]
         if hasattr(search, 'decision_function'):
             y_score = search_best_estimator.decision_function(X[te_idxs])
         else:
             y_score = search_best_estimator.predict_proba(X[te_idxs])[:,1]
         roc_auc_te = roc_auc_score(y[te_idxs], y_score)
-        fpr, tpr, thres = roc_curve(y[te_idxs], y_score, pos_label=1)
+        fpr, tpr, _ = roc_curve(y[te_idxs], y_score, pos_label=1)
+        avg_pre_te = average_precision_score(y[te_idxs], y_score)
+        pre, rec, _ = precision_recall_curve(y[te_idxs], y_score, pos_label=1)
+        pr_auc_te = auc(rec, pre)
         y_pred = search_best_estimator.predict(X[te_idxs])
-        bcr_te = bcr_score(y[te_idxs], y_pred)
-        print(
-            'Dataset:', dataset_name,
-            ' Split: %2s' % split_num,
-            ' ROC AUC (CV / Test): %.4f / %.4f' % (roc_auc_cv, roc_auc_te),
-            ' BCR (CV / Test): %.4f / %.4f' % (bcr_cv, bcr_te),
-            ' Features: %3s' % feature_idxs.size,
-            ' Params:', search_best_params,
-        )
+        bcr_te = balanced_accuracy_score(y[te_idxs], y_pred)
+        if args.verbose > 0:
+            print(
+                'Dataset:', dataset_name,
+                ' Split: %3s' % split_num,
+                ' ROC AUC (CV / Test): %.4f / %.4f' % (roc_auc_cv, roc_auc_te),
+                ' AVG PRE (CV / Test): %.4f / %.4f' % (avg_pre_cv, avg_pre_te),
+                ' PR AUC Test: %.4f' % pr_auc_te,
+                ' BCR (CV / Test): %.4f / %.4f' % (bcr_cv, bcr_te),
+                # ' Features: %3s' % feature_idxs.size,
+                ' Params:', search_best_params,
+            )
         if args.verbose > 1:
             if weights.size > 0:
                 print('Feature Rankings:')
@@ -1405,7 +1422,7 @@ if args.analysis == 1:
             else:
                 param_values_cv_sorted_idxs = np.arange(param_values_cv.shape[0])
             if param not in param_scores_cv: param_scores_cv[param] = {}
-            for metric in scv_scoring.keys():
+            for metric in scv_scoring:
                 if args.scv_h_plt_meth == 'best':
                     mean_scores_cv = np.max(np.transpose(np.reshape(
                         search.cv_results_[
@@ -1439,11 +1456,15 @@ if args.analysis == 1:
             'feature_names': feature_names,
             'fprs': fpr,
             'tprs': tpr,
-            'thres': thres,
+            'pres': pre,
+            'recs': rec,
             'weights': weights,
             'y_score': y_score,
             'roc_auc_cv': roc_auc_cv,
             'roc_auc_te': roc_auc_te,
+            'avg_pre_cv': avg_pre_cv,
+            'avg_pre_te': avg_pre_te,
+            'pr_auc_te': pr_auc_te,
             'bcr_cv': bcr_cv,
             'bcr_te': bcr_te,
         })
@@ -1458,9 +1479,11 @@ if args.analysis == 1:
     sns.set_palette(sns.color_palette('hls', len(scv_scoring)))
     for param_idx, param in enumerate(param_scores_cv):
         mean_roc_aucs_cv = np.mean(param_scores_cv[param]['roc_auc'], axis=0)
-        mean_bcrs_cv = np.mean(param_scores_cv[param]['bcr'], axis=0)
+        mean_avg_pres_cv = np.mean(param_scores_cv[param]['average_precision'], axis=0)
+        mean_bcrs_cv = np.mean(param_scores_cv[param]['balanced_accuracy'], axis=0)
         std_roc_aucs_cv = np.std(param_scores_cv[param]['roc_auc'], axis=0)
-        std_bcrs_cv = np.std(param_scores_cv[param]['bcr'], axis=0)
+        std_avg_pres_cv = np.std(param_scores_cv[param]['average_precision'], axis=0)
+        std_bcrs_cv = np.std(param_scores_cv[param]['balanced_accuracy'], axis=0)
         plt.figure('Figure ' + str(args.analysis) + '-' + str(param_idx + 1))
         plt.rcParams['font.size'] = 14
         if param in params_num_xticks:
@@ -1489,6 +1512,17 @@ if args.analysis == 1:
         )
         plt.plot(
             x_axis,
+            mean_avg_pres_cv,
+            lw=2, alpha=0.8, label='Mean AVG PRE'
+        )
+        plt.fill_between(
+            x_axis,
+            [m - s for m, s in zip(mean_avg_pres_cv, std_avg_pres_cv)],
+            [m + s for m, s in zip(mean_avg_pres_cv, std_avg_pres_cv)],
+            color='grey', alpha=0.2,  # label=r'$\pm$ 1 std. dev.'
+        )
+        plt.plot(
+            x_axis,
             mean_bcrs_cv,
             lw=2, alpha=0.8, label='Mean BCR'
         )
@@ -1496,7 +1530,7 @@ if args.analysis == 1:
             x_axis,
             [m - s for m, s in zip(mean_bcrs_cv, std_bcrs_cv)],
             [m + s for m, s in zip(mean_bcrs_cv, std_bcrs_cv)],
-            color='grey', alpha=0.2, #label=r'$\pm$ 1 std. dev.'
+            color='grey', alpha=0.2,  # label=r'$\pm$ 1 std. dev.'
         )
         plt.legend(loc='lower right', fontsize='small')
         plt.grid(True, alpha=0.3)
@@ -1512,7 +1546,8 @@ if args.analysis == 1:
     plt.ylabel('True Positive Rate')
     plt.xlim([-0.01, 1.01])
     plt.ylim([-0.01, 1.01])
-    tprs, roc_aucs_cv, roc_aucs_te, bcrs_cv, bcrs_te, num_features = [], [], [], [], [], []
+    tprs, roc_aucs_cv, roc_aucs_te = [], [], []
+    bcrs_cv, bcrs_te, num_features = [], [], []
     mean_fpr = np.linspace(0, 1, 100)
     for split_idx, split_result in enumerate(split_results):
         roc_aucs_cv.append(split_result['roc_auc_cv'])
@@ -1547,17 +1582,63 @@ if args.analysis == 1:
     plt.plot([0, 1], [0, 1], linestyle='--', lw=3, alpha=0.2, label='Chance')
     plt.legend(loc='lower right', fontsize='small')
     plt.grid(False)
-    print(
-        'Dataset:', dataset_name,
-        ' Mean ROC AUC (CV / Test): %.4f / %.4f' % (np.mean(roc_aucs_cv), np.mean(roc_aucs_te)),
-        ' Mean BCR (CV / Test): %.4f / %.4f' % (np.mean(bcrs_cv), np.mean(bcrs_te)),
-        ' Mean Features: %3d' % round(np.mean(num_features)),
+    # plot pr curve
+    sns.set_palette(sns.color_palette('hls', 10))
+    plt.figure('Figure ' + str(args.analysis) + '-' + str(len(param_scores_cv) + 2))
+    plt.rcParams['font.size'] = 14
+    plt.title(
+        dataset_name + ' ' + args.clf_meth + ' Classifier (' + args.fs_meth + ' Feature Selection)\n' +
+        'PR Curve'
     )
+    plt.xlabel('Recall')
+    plt.ylabel('Precision')
+    plt.xlim([-0.01, 1.01])
+    plt.ylim([-0.01, 1.01])
+    pres, avg_pres_cv, avg_pres_te, pr_aucs_te = [], [], [], []
+    mean_rec = np.linspace(0, 1, 100)
+    for split_idx, split_result in enumerate(split_results):
+        avg_pres_cv.append(split_result['avg_pre_cv'])
+        avg_pres_te.append(split_result['avg_pre_te'])
+        pr_aucs_te.append(split_result['pr_auc_te'])
+        pres.append(np.interp(mean_rec, split_result['recs'], split_result['pres']))
+        # pres[-1][0] = 1.0
+        # plt.step(split_result['recs'], split_result['pres'], lw=4, alpha=0.2, where='post',
+        #          label='PR split %d (AUC = %0.4f)' % (split_idx + 1, split_result['pr_auc_te']))
+    mean_pre = np.mean(pres, axis=0)
+    # mean_pre[-1] = 0.0
+    mean_pr_auc = np.mean(pr_aucs_te)
+    std_pr_auc = np.std(pr_aucs_te)
+    plt.step(
+        mean_rec, mean_pre, lw=3, alpha=0.8, where='post',
+        label=r'Test Mean PR (AUC = %0.4f $\pm$ %0.2f, Features = %d $\pm$ %d)' %
+        (mean_pr_auc, std_pr_auc, mean_num_features, std_num_features),
+    )
+    std_pre = np.std(pres, axis=0)
+    pres_upper = np.minimum(mean_pre + std_pre, 1)
+    pres_lower = np.maximum(mean_pre - std_pre, 0)
+    plt.fill_between(
+        mean_rec, pres_lower, pres_upper,
+        color='grey', alpha=0.2, label=r'$\pm$ 1 std. dev.'
+    )
+    plt.legend(loc='lower right', fontsize='small')
+    plt.grid(False)
+    print(
+        'Dataset:', dataset_name, dataset_dim_str,
+        ' Mean ROC AUC (CV / Test): %.4f / %.4f' % (np.mean(roc_aucs_cv), np.mean(roc_aucs_te)),
+        ' Mean AVG PRE (CV / Test): %.4f / %.4f' % (np.mean(avg_pres_cv), np.mean(avg_pres_te)),
+        ' Mean PR AUC Test: %.4f' % np.mean(pr_aucs_te),
+        ' Mean BCR (CV / Test): %.4f / %.4f' % (np.mean(bcrs_cv), np.mean(bcrs_te)),
+        end=''
+    )
+    if args.fs_meth != 'None':
+        print(' Mean Features: %3d' % round(np.mean(num_features)))
+    else:
+        print()
     # calculate overall best ranked features
     feature_idxs = []
     for split_result in split_results: feature_idxs.extend(split_result['feature_idxs'])
     feature_idxs = sorted(list(set(feature_idxs)))
-    feature_names = np.array(biobase.featureNames(eset), dtype=str)[feature_idxs]
+    feature_names = np.array(r_biobase.featureNames(eset), dtype=str)[feature_idxs]
     # print(*natsorted(feature_names), sep='\n')
     feature_mx_idx = {}
     for idx, feature_idx in enumerate(feature_idxs): feature_mx_idx[feature_idx] = idx
@@ -1582,9 +1663,10 @@ if args.analysis == 1:
         feature_ranks = feature_mean_roc_aucs
     elif args.fs_rank_meth == 'mean_bcrs':
         feature_ranks = feature_mean_bcrs
-    print('Overall Feature Rankings:')
-    for rank, feature in sorted(zip(feature_ranks, feature_names), reverse=True):
-        print(feature, '\t', rank)
+    if args.verbose > 1:
+        print('Overall Feature Rankings:')
+        for rank, feature in sorted(zip(feature_ranks, feature_names), reverse=True):
+            print(feature, '\t', rank)
 elif args.analysis == 2:
     prep_steps = []
     if args.data_type and args.data_type[0] not in ('None', 'none'):
@@ -1628,11 +1710,11 @@ elif args.analysis == 2:
     eset_tr_name = 'eset_' + dataset_tr_name
     eset_tr_file = 'data/' + eset_tr_name + '.Rda'
     if os.path.isfile(eset_tr_file):
-        base.load('data/' + eset_tr_name + '.Rda')
+        r_base.load('data/' + eset_tr_name + '.Rda')
     else:
         exit('File does not exist or invalid: ' + eset_tr_file)
     eset_tr = robjects.globalenv[eset_tr_name]
-    X_tr = np.array(base.t(biobase.exprs(eset_tr)), dtype=float)
+    X_tr = np.array(r_base.t(r_biobase.exprs(eset_tr)), dtype=float)
     y_tr = np.array(r_eset_class_labels(eset_tr), dtype=int)
     if args.fs_meth != 'Column':
         if args.filt_zero_feats:
@@ -1697,10 +1779,10 @@ elif args.analysis == 2:
             for col_names in args.fs_col_names
         ]
     elif args.fs_meth == 'Limma-KBest':
-        if norm_meth and norm_meth in ['pkm', 'tpm', 'ppm']:
-            pipe.set_params(fs1__score_func__pkm=True)
+        if norm_meth and norm_meth in ['fpkm', 'rpkm', 'tpm', 'ppm']:
+            pipe.set_params(fs1__score_func__trend=True)
         else:
-            pipe.set_params(fs1__score_func__pkm=False)
+            pipe.set_params(fs1__score_func__trend=False)
     if args.scv_type == 'grid':
         search = GridSearchCV(
             pipe, param_grid=param_grid, scoring=scv_scoring, refit=args.scv_refit, iid=False,
@@ -1735,7 +1817,7 @@ elif args.analysis == 2:
     for step in search.best_estimator_.named_steps:
         if hasattr(search.best_estimator_.named_steps[step], 'get_support'):
             feature_idxs = feature_idxs[search.best_estimator_.named_steps[step].get_support(indices=True)]
-    feature_names = np.array(biobase.featureNames(eset_tr), dtype=str)[feature_idxs]
+    feature_names = np.array(r_biobase.featureNames(eset_tr), dtype=str)[feature_idxs]
     weights = np.array([], dtype=float)
     if hasattr(search.best_estimator_.named_steps['clf'], 'coef_'):
         weights = np.square(search.best_estimator_.named_steps['clf'].coef_[0])
@@ -1824,7 +1906,7 @@ elif args.analysis == 2:
         )
         plt.xlabel(param)
         plt.ylabel('CV Score')
-        for metric_idx, metric in enumerate(sorted(scv_scoring.keys(), reverse=True)):
+        for metric_idx, metric in enumerate(reversed(scv_scoring)):
             if args.scv_h_plt_meth == 'best':
                 mean_scores_cv = np.transpose(np.reshape(
                     search.cv_results_[
@@ -1915,9 +1997,9 @@ elif args.analysis == 2:
             eset_te_name = 'eset_' + dataset_te_name
             eset_te_file = 'data/' + eset_te_name + '.Rda'
             if not os.path.isfile(eset_te_file): continue
-            base.load(eset_te_file)
+            r_base.load(eset_te_file)
             eset_te = robjects.globalenv[eset_te_name]
-            X_te = np.array(base.t(biobase.exprs(eset_te)), dtype=float)
+            X_te = np.array(r_base.t(r_biobase.exprs(eset_te)), dtype=float)
             y_te = np.array(r_eset_class_labels(eset_te), dtype=int)
             if args.filt_zero_feats:
                 X_te = X_te[:, nzero_feature_idxs]
@@ -1937,9 +2019,9 @@ elif args.analysis == 2:
                 else:
                     y_score = pipe.predict_proba(X_te[:,top_feature_idxs])[:,1]
                 roc_auc_te = roc_auc_score(y_te, y_score)
-                fpr, tpr, thres = roc_curve(y_te, y_score, pos_label=1)
+                fpr, tpr, _ = roc_curve(y_te, y_score, pos_label=1)
                 y_pred = pipe.predict(X_te[:,top_feature_idxs])
-                bcr_te = bcr_score(y_te, y_pred)
+                bcr_te = balanced_accuracy_score(y_te, y_pred)
                 roc_aucs_te.append(roc_auc_te)
                 bcrs_te.append(bcr_te)
             plt.plot(
@@ -1974,9 +2056,9 @@ elif args.analysis == 2:
             else:
                 dataset_te_name = '_'.join([dataset_tr_name, dataset_te_basename, 'te'])
             eset_te_name = 'eset_' + dataset_te_name
-            if not base.exists(eset_te_name)[0]: continue
+            if not r_base.exists(eset_te_name)[0]: continue
             eset_te = robjects.globalenv[eset_te_name]
-            X_te = np.array(base.t(biobase.exprs(eset_te)), dtype=float)
+            X_te = np.array(r_base.t(r_biobase.exprs(eset_te)), dtype=float)
             y_te = np.array(r_eset_class_labels(eset_te), dtype=int)
             if args.filt_zero_feats:
                 X_te = X_te[:, nzero_feature_idxs]
@@ -1991,9 +2073,9 @@ elif args.analysis == 2:
             else:
                 y_score = search.predict_proba(X_te)[:,1]
             roc_auc_te = roc_auc_score(y_te, y_score)
-            fpr, tpr, thres = roc_curve(y_te, y_score, pos_label=1)
+            fpr, tpr, _ = roc_curve(y_te, y_score, pos_label=1)
             y_pred = search.predict(X_te)
-            bcr_te = bcr_score(y_te, y_pred)
+            bcr_te = balanced_accuracy_score(y_te, y_pred)
             plt.plot(
                 fpr, tpr, lw=3, alpha=0.8,
                 label=r'%s ROC (AUC = %0.4f, BCR = %0.4f)' % (dataset_te_name, roc_auc_te, bcr_te),
@@ -2033,7 +2115,7 @@ elif args.analysis == 3:
                                 ] if x not in ('None', 'none')
                             ])
                             prep_group_info.append({
-                                'pkm': True if norm_meth in ['pkm', 'tpm', 'ppm'] else False,
+                                'rna-seq': True if norm_meth in ['fpkm', 'rpkm', 'tpm', 'ppm'] else False,
                                 'mrg': True if prep_meth == 'mrg' else False,
                                 'bcm': True if bc_meth not in ('None', 'none') else False,
                             })
@@ -2124,9 +2206,9 @@ elif args.analysis == 3:
             eset_tr_name = 'eset_' + dataset_tr_name
             eset_tr_file = 'data/' + eset_tr_name + '.Rda'
             if not os.path.isfile(eset_tr_file): continue
-            base.load('data/' + eset_tr_name + '.Rda')
+            r_base.load('data/' + eset_tr_name + '.Rda')
             eset_tr = robjects.globalenv[eset_tr_name]
-            X_tr = np.array(base.t(biobase.exprs(eset_tr)), dtype=float)
+            X_tr = np.array(r_base.t(r_biobase.exprs(eset_tr)), dtype=float)
             y_tr = np.array(r_eset_class_labels(eset_tr), dtype=int)
             if args.filt_zero_feats:
                 nzero_feature_idxs = np.array(r_data_nzero_col_idxs(X_tr), dtype=int)
@@ -2174,10 +2256,10 @@ elif args.analysis == 3:
                     if fs_meth == 'Limma-KBest':
                         for (step, object) in fs_meth_pipeline['steps']:
                             if object.__class__.__name__ == 'SelectKBest':
-                                if prep_group_info[pr_idx]['pkm']:
-                                    object.set_params(score_func__pkm=True)
+                                if prep_group_info[pr_idx]['rna-seq']:
+                                    object.set_params(score_func__trend=True)
                                 else:
-                                    object.set_params(score_func__pkm=False)
+                                    object.set_params(score_func__trend=False)
                     for fs_params in fs_meth_pipeline['param_grid']:
                         for param in fs_params:
                             if param in params_feature_select:
@@ -2230,10 +2312,10 @@ elif args.analysis == 3:
                     **pipelines['clf'][args.clf_meth]['param_grid'][0],
                 }
                 if args.fs_meth == 'Limma-KBest':
-                    if prep_group_info[pr_idx]['pkm']:
-                        pipe.set_params(fs1__score_func__pkm=True)
+                    if prep_group_info[pr_idx]['rna-seq']:
+                        pipe.set_params(fs1__score_func__trend=True)
                     else:
-                        pipe.set_params(fs1__score_func__pkm=False)
+                        pipe.set_params(fs1__score_func__trend=False)
                 for param in param_grid:
                     if param in params_feature_select:
                         param_grid[param] = list(filter(
@@ -2278,7 +2360,7 @@ elif args.analysis == 3:
                 fs_idx = param_grid_group['meth_idxs']['fs']
                 clf_idx = param_grid_group['meth_idxs']['clf']
                 slr_idx = param_grid_group['meth_idxs']['slr']
-                for metric in scv_scoring.keys():
+                for metric in scv_scoring:
                     metric_te = metric + '_te'
                     metric_score_te = search.cv_results_['mean_test_' + metric][group_best_grid_idx[group_idx]]
                     (results['tr_pr'][tr_idx, pr_idx]['fs_clf'][fs_idx, clf_idx]
@@ -2299,7 +2381,7 @@ elif args.analysis == 3:
             best_params_te = search.cv_results_['params'][best_grid_idx_te]
             print('Best Params (Test):', best_params_te)
             print('ROC AUC (Test): %.4f' % best_roc_auc_te, ' BCR (Test): %.4f' % best_bcr_te)
-            base.remove(eset_tr_name)
+            r_base.remove(eset_tr_name)
             dataset_num += 1
             # flush cache with each tr/te pair run (can grow too big if not)
             if args.pipe_memory: memory.clear(warn=False)
@@ -2472,7 +2554,7 @@ elif args.analysis == 3:
         else:
             legend_kwargs['fontsize'] = 'x-small'
         sns.set_palette(sns.color_palette('hls', len(figure['line_names'])))
-        for metric_idx, metric in enumerate(sorted(scv_scoring.keys(), reverse=True)):
+        for metric_idx, metric in enumerate(reversed(scv_scoring)):
             metric_title = metric.replace('_', ' ').upper()
             figure_name = 'Figure ' + str(args.analysis) + '-' + str(figure_idx + 1) + '-' + str(metric_idx + 1)
             plt.figure(figure_name + 'B')
@@ -2564,7 +2646,7 @@ elif args.analysis == 4:
                                 ] if x not in ('None', 'none')
                             ])
                             prep_group_info.append({
-                                'pkm': True if norm_meth in ['pkm', 'tpm', 'ppm'] else False,
+                                'rna-seq': True if norm_meth in ['fpkm', 'rpkm', 'tpm', 'ppm'] else False,
                                 'mrg': True if prep_meth == 'mrg' else False,
                                 'bcm': True if bc_meth not in ('None', 'none') else False,
                             })
@@ -2694,13 +2776,13 @@ elif args.analysis == 4:
                 eset_tr_file = 'data/' + eset_tr_name + '.Rda'
                 eset_te_file = 'data/' + eset_te_name + '.Rda'
                 if not os.path.isfile(eset_tr_file) or not os.path.isfile(eset_te_file): continue
-                base.load('data/' + eset_tr_name + '.Rda')
+                r_base.load('data/' + eset_tr_name + '.Rda')
                 eset_tr = robjects.globalenv[eset_tr_name]
-                X_tr = np.array(base.t(biobase.exprs(eset_tr)), dtype=float)
+                X_tr = np.array(r_base.t(r_biobase.exprs(eset_tr)), dtype=float)
                 y_tr = np.array(r_eset_class_labels(eset_tr), dtype=int)
-                base.load('data/' + eset_te_name + '.Rda')
+                r_base.load('data/' + eset_te_name + '.Rda')
                 eset_te = robjects.globalenv[eset_te_name]
-                X_te = np.array(base.t(biobase.exprs(eset_te)), dtype=float)
+                X_te = np.array(r_base.t(r_biobase.exprs(eset_te)), dtype=float)
                 y_te = np.array(r_eset_class_labels(eset_te), dtype=int)
                 if args.filt_zero_feats:
                     nzero_feature_idxs = np.array(r_data_nzero_col_idxs(X_tr), dtype=int)
@@ -2752,10 +2834,10 @@ elif args.analysis == 4:
                         if fs_meth == 'Limma-KBest':
                             for (step, object) in fs_meth_pipeline['steps']:
                                 if object.__class__.__name__ == 'SelectKBest':
-                                    if prep_group_info[pr_idx]['pkm']:
-                                        object.set_params(score_func__pkm=True)
+                                    if prep_group_info[pr_idx]['rna-seq']:
+                                        object.set_params(score_func__trend=True)
                                     else:
-                                        object.set_params(score_func__pkm=False)
+                                        object.set_params(score_func__trend=False)
                         for fs_params in fs_meth_pipeline['param_grid']:
                             for param in fs_params:
                                 if param in params_feature_select:
@@ -2808,10 +2890,10 @@ elif args.analysis == 4:
                         **pipelines['clf'][args.clf_meth]['param_grid'][0],
                     }
                     if args.fs_meth == 'Limma-KBest':
-                        if prep_group_info[pr_idx]['pkm']:
-                            pipe.set_params(fs1__score_func__pkm=True)
+                        if prep_group_info[pr_idx]['rna-seq']:
+                            pipe.set_params(fs1__score_func__trend=True)
                         else:
-                            pipe.set_params(fs1__score_func__pkm=False)
+                            pipe.set_params(fs1__score_func__trend=False)
                     for param in param_grid:
                         if param in params_feature_select:
                             param_grid[param] = list(filter(
@@ -2869,12 +2951,12 @@ elif args.analysis == 4:
                         y_score = pipes[group_idx].predict_proba(X_te)[:,1]
                     roc_auc_te = roc_auc_score(y_te, y_score)
                     y_pred = pipes[group_idx].predict(X_te)
-                    bcr_te = bcr_score(y_te, y_pred)
+                    bcr_te = balanced_accuracy_score(y_te, y_pred)
                     metric_scores_te = { 'roc_auc_te': roc_auc_te, 'bcr_te': bcr_te }
                     fs_idx = param_grid_group['meth_idxs']['fs']
                     clf_idx = param_grid_group['meth_idxs']['clf']
                     slr_idx = param_grid_group['meth_idxs']['slr']
-                    for metric in scv_scoring.keys():
+                    for metric in scv_scoring:
                         metric_cv = metric + '_cv'
                         metric_te = metric + '_te'
                         metric_score_cv = search.cv_results_['mean_test_' + metric][group_best_grid_idx[group_idx]]
@@ -2927,8 +3009,8 @@ elif args.analysis == 4:
                 print('Best Params (Test):', best_params_te)
                 print('ROC AUC (CV / Test): %.4f / %.4f' % (best_roc_auc_cv, best_roc_auc_te),
                     ' BCR (CV / Test): %.4f / %.4f' % (best_bcr_cv, best_bcr_te))
-                base.remove(eset_tr_name)
-                base.remove(eset_te_name)
+                r_base.remove(eset_tr_name)
+                r_base.remove(eset_te_name)
                 dataset_pair_num += 1
                 # flush cache with each tr/te pair run (can grow too big if not)
                 if args.pipe_memory: memory.clear(warn=False)
@@ -3171,7 +3253,7 @@ elif args.analysis == 4:
         else:
             legend_kwargs['fontsize'] = 'x-small'
         sns.set_palette(sns.color_palette('hls', len(figure['line_names'])))
-        for metric_idx, metric in enumerate(sorted(scv_scoring.keys(), reverse=True)):
+        for metric_idx, metric in enumerate(reversed(scv_scoring)):
             metric_title = metric.replace('_', ' ').upper()
             figure_name = 'Figure ' + str(args.analysis) + '-' + str(figure_idx + 1) + '-' + str(metric_idx + 1)
             plt.figure(figure_name + 'A')

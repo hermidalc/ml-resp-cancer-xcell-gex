@@ -33,8 +33,9 @@ class LimmaScorerClassification(BaseScorer):
 
     Parameters
     ----------
-    pkm : bool, default=False
-        If X matrix is RNA-seq FPKM/RPKM/TPM normalized count data
+    trend : bool, default=False
+        When data is RNA-seq FPKM/RPKM/TPM normalized count data set eBayes
+        trend=True
 
     Attributes
     ----------
@@ -44,8 +45,8 @@ class LimmaScorerClassification(BaseScorer):
     pvalues_ : array, shape (n_features,)
         The set of p-values.
     """
-    def __init__(self, pkm=False):
-        self.pkm = pkm
+    def __init__(self, trend=False):
+        self.trend = trend
 
     def fit(self, X, y):
         """Run scorer on (X, y).
@@ -64,7 +65,7 @@ class LimmaScorerClassification(BaseScorer):
             Returns self.
         """
         self._check_params(X, y)
-        f, pv = r_limma_feature_score(X, y, pkm=self.pkm)
+        f, pv = r_limma_feature_score(X, y, trend=self.trend)
         self.scores_, self.pvalues_ = np.array(f, dtype=float), np.array(pv, dtype=float)
         return self
 

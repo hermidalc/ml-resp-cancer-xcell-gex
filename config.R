@@ -32,24 +32,26 @@ dataset_names <- c(
     "radiation",
     "schalper",
     "tcga_skcm",
-    "vanallen",
+    "vanallen_sd0",
+    "vanallen_sd1",
     "zhao"
 )
 rna_seq_dataset_names <- c(
     "gse78220",
     "gse91061_sd0",
     "gse91061_sd1",
-    "gse91061_on_sd0",
-    "gse91061_on_sd1",
     "gse91061_pre_sd0",
     "gse91061_pre_sd1",
+    "gse91061_on_sd0",
+    "gse91061_on_sd1",
     "gse106291",
     "gse115821",
     "gse121810",
     "miao",
     "ovarian",
     "tcga_skcm",
-    "vanallen",
+    "vanallen_sd0",
+    "vanallen_sd1",
     "zhao"
 )
 needs_log2_dataset_names <- c(
@@ -61,12 +63,16 @@ needs_log2_dataset_names <- c(
 )
 data_types <- c(
     "gex",
-    "wxs",
+    "gex_cyt",
+    "gex_cyt_tmb",
+    "gex_tmb",
+    "tmb",
     "xcell"
 )
 norm_methods <- c(
     "none",
-    "pkm",
+    "fpkm",
+    "rpkm",
     "tpm"
 )
 feat_types <- c(
@@ -97,16 +103,28 @@ bc_methods <- c(
 filt_types <- c(
     "none",
     "cd8",
+    "cyt",
     "go0002376",
     "ifng",
+    "ifnge",
     "impres",
+    "ipres",
     "kdm5a",
+    "kdm5a2",
+    "kdm5a_cyt",
+    "kdm5a_cyt_tmb",
+    "kdm5a_tmb",
     "kleg",
-    "pdl1",
-    "xcell"
+    "kleg_cyt",
+    "kleg_cyt_tmb",
+    "kleg_tmb",
+    "pdl1"
 )
 common_pheno_names <- c(
     "Batch",
     "Class"
 )
+pdata_cls_name <- "Class"
+wes_tmb_feat_name <- "WES-TMB"
+gex_cyt_feat_name <- "GEX-CYT"
 matfact_k <- 20
