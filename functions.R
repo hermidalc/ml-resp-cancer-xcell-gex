@@ -45,8 +45,8 @@ edger_filterbyexpr_mask <- function(X, y) {
     return(filterByExpr(DGEList(counts=t(X), group=y)))
 }
 
-edger_logcpm_transform <- function(X, prior.count=1) {
-    return(t(edgeR::cpm(t(X), log=TRUE, prior.count=prior.count)))
+edger_logcpm_transform <- function(X, prior_count=1) {
+    return(t(edgeR::cpm(t(X), log=TRUE, prior.count=prior_count)))
 }
 
 # from edgeR codebase
@@ -61,26 +61,26 @@ edger_tmm_ref_sample <- function(X) {
     return(counts[, edger_tmm_ref_column(counts=counts)])
 }
 
-edger_tmm_logcpm_transform <- function(X, ref_sample=NULL, prior.count=1) {
+edger_tmm_logcpm_transform <- function(X, ref_sample=NULL, prior_count=1) {
     suppressPackageStartupMessages(library("edgeR"))
     counts <- t(X)
     if (is.null(ref_sample)) {
         dge <- DGEList(counts=counts)
         dge <- calcNormFactors(dge, method="TMM")
-        log_cpm <- cpm(dge, log=TRUE, prior.count=prior.count)
+        log_cpm <- cpm(dge, log=TRUE, prior.count=prior_count)
         ref_sample <- counts[, edger_tmm_ref_column(counts=counts)]
     } else {
         counts <- cbind(counts, ref_sample)
         colnames(counts) <- NULL
         dge <- DGEList(counts=counts)
         dge <- calcNormFactors(dge, method="TMM", refColumn=ncol(dge))
-        log_cpm <- cpm(dge, log=TRUE, prior.count=prior.count)
+        log_cpm <- cpm(dge, log=TRUE, prior.count=prior_count)
         log_cpm <- log_cpm[, -ncol(log_cpm)]
     }
     return(list(t(log_cpm), ref_sample))
 }
 
-limma_voom_feature_score <- function(X, y, prior.count=1) {
+limma_voom_feature_score <- function(X, y, prior_count=1) {
     suppressPackageStartupMessages(library("edgeR"))
     suppressPackageStartupMessages(library("limma"))
     counts <- t(X)
@@ -96,7 +96,7 @@ limma_voom_feature_score <- function(X, y, prior.count=1) {
     fit <- eBayes(fit)
     results <- topTableF(fit, number=Inf, adjust.method="BH", sort.by="none")
     results <- results[order(as.integer(row.names(results))), , drop=FALSE]
-    log_cpm <- cpm(dge, log=TRUE, prior.count=prior.count)
+    log_cpm <- cpm(dge, log=TRUE, prior.count=prior_count)
     return(list(results$F, results$adj.P.Val, t(log_cpm)))
 }
 
@@ -153,12 +153,12 @@ sym_uncert_feature_idxs <- function(X, y) {
     return(list(as.integer(row.names(results)) - 1, results$attr_importance))
 }
 
-relieff_feature_score <- function(X, y, num.neighbors=10, sample.size=5) {
+relieff_feature_score <- function(X, y, num_neighbors=10, sample_size=5) {
     X <- as.data.frame(X)
     colnames(X) <- seq(1, ncol(X))
     results <- FSelector::relief(
         as.formula("Class ~ ."), cbind(X, "Class"=as.factor(y)),
-        neighbours.count=num.neighbors, sample.size=sample.size
+        neighbours.count=num_neighbors, sample.size=sample_size
     )
     results <- results[order(as.integer(row.names(results))), , drop=FALSE]
     return(results$attr_importance)
