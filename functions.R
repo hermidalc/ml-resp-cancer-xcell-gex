@@ -3,8 +3,7 @@ suppressPackageStartupMessages(library("Biobase"))
 eset_class_labels <- function(eset, samples=NULL) {
     if (!is.null(samples)) {
         return(eset$Class[c(samples)])
-    }
-    else {
+    } else {
         return(eset$Class)
     }
 }
@@ -16,8 +15,7 @@ eset_feature_idxs <- function(eset, features) {
 eset_feature_annots <- function(eset, annots=annots, features=NULL) {
     if (!is.null(features)) {
         annots <- as.matrix(fData(eset)[c(features), c(annots), drop=FALSE])
-    }
-    else {
+    } else {
         annots <- as.matrix(fData(eset)[, c(annots), drop=FALSE])
     }
     annots[is.na(annots)] <- ""
@@ -42,17 +40,69 @@ data_corr_col_idxs <- function(X, cutoff=0.5) {
     return(sort(caret::findCorrelation(cor(X), cutoff=cutoff)) - 1)
 }
 
-limma_feature_score <- function(X, y, trend=FALSE) {
-    suppressPackageStartupMessages(require("limma"))
+edger_filterbyexpr_mask <- function(X, y) {
+    suppressPackageStartupMessages(library("edgeR"))
+    return(filterByExpr(DGEList(counts=t(X), group=y)))
+}
+
+edger_logcpm_transform <- function(X) {
+    return(t(edgeR::cpm(t(X), log=TRUE, prior.count=1)))
+}
+
+# from edgeR codebase
+edger_tmm_ref_column <- function(counts, lib.size=colSums(counts), p=0.75) {
+    y <- t(t(counts) / lib.size)
+    f <- apply(y, 2, function(x) quantile(x, p=p))
+    ref_column <- which.min(abs(f - mean(f)))
+}
+
+edger_tmm_logcpm_transform <- function(X, ref_sample=NULL) {
+    suppressPackageStartupMessages(library("edgeR"))
+    counts <- t(X)
+    if (is.null(ref_sample)) {
+        dge <- DGEList(counts=counts)
+        dge <- calcNormFactors(dge, method="TMM")
+        log_cpm <- cpm(dge, log=TRUE, prior.count=1)
+        ref_sample <- counts[, edger_tmm_ref_column(counts=counts)]
+    } else {
+        counts <- cbind(counts, ref_sample)
+        colnames(counts) <- NULL
+        dge <- DGEList(counts=counts)
+        dge <- calcNormFactors(dge, method="TMM", refColumn=ncol(dge))
+        log_cpm <- cpm(dge, log=TRUE, prior.count=1)
+        log_cpm <- log_cpm[, -ncol(log_cpm)]
+    }
+    return(list(t(log_cpm), ref_sample))
+}
+
+limma_voom_feature_score <- function(X, y) {
+    suppressPackageStartupMessages(library("edgeR"))
+    suppressPackageStartupMessages(library("limma"))
+    dge <- DGEList(counts=t(X), group=y)
+    dge <- calcNormFactors(dge, method="TMM")
+    design <- model.matrix(~0 + factor(y))
+    colnames(design) <- c("Class0", "Class1")
+    v <- voom(dge, design)
+    fit <- lmFit(v, design)
+    fit <- contrasts.fit(fit, makeContrasts(
+        Class1VsClass0=Class1-Class0, levels=design
+    ))
+    fit <- eBayes(fit)
+    results <- topTableF(fit, number=Inf, adjust.method="BH", sort.by="none")
+    results <- results[order(as.integer(row.names(results))), , drop=FALSE]
+    return(list(results$F, results$adj.P.Val))
+}
+
+limma_feature_score <- function(X, y, robust=FALSE, trend=FALSE) {
+    suppressPackageStartupMessages(library("limma"))
     design <- model.matrix(~0 + factor(y))
     colnames(design) <- c("Class0", "Class1")
     fit <- lmFit(t(X), design)
-    contrast.matrix <- makeContrasts(
+    fit <- contrasts.fit(fit, makeContrasts(
         Class1VsClass0=Class1-Class0, levels=design
-    )
-    fit.contrasts <- contrasts.fit(fit, contrast.matrix)
-    fit.b <- eBayes(fit.contrasts, trend=trend)
-    results <- topTableF(fit.b, number=Inf, adjust.method="BH")
+    ))
+    fit <- eBayes(fit, robust=robust, trend=trend)
+    results <- topTableF(fit, number=Inf, adjust.method="BH", sort.by="none")
     results <- results[order(as.integer(row.names(results))), , drop=FALSE]
     return(list(results$F, results$adj.P.Val))
 }

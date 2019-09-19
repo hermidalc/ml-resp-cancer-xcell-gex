@@ -8,17 +8,24 @@ from rpy2.robjects.packages import importr
 from rpy2.robjects import numpy2ri
 from sklearn.base import BaseEstimator
 from sklearn.feature_selection.base import SelectorMixin
-from sklearn.utils import check_X_y
+from sklearn.utils import check_array, check_X_y
 from sklearn.utils.validation import check_is_fitted
 from .univariate_selection import BaseScorer
 
-base = importr('base')
-base.source('functions.R')
+r_base = importr('base')
+r_base.source('functions.R')
+r_edger_filterbyexpr_mask = robjects.globalenv['edger_filterbyexpr_mask']
+r_edger_tmm_logcpm_transform = robjects.globalenv['edger_tmm_logcpm_transform']
+r_limma_voom_feature_score = robjects.globalenv['limma_voom_feature_score']
 r_limma_feature_score = robjects.globalenv['limma_feature_score']
 r_cfs_feature_idxs = robjects.globalenv['cfs_feature_idxs']
 r_fcbf_feature_idxs = robjects.globalenv['fcbf_feature_idxs']
 r_relieff_feature_score = robjects.globalenv['relieff_feature_score']
 numpy2ri.activate()
+
+def limma_voom_feature_score(X, y):
+    f, pv = r_limma_voom_feature_score(X, y)
+    return np.array(f, dtype=float), np.array(pv, dtype=float)
 
 def fcbf_feature_idxs(X, y, threshold=0):
     idxs, scores = r_fcbf_feature_idxs(X, y, threshold=threshold)
@@ -28,8 +35,158 @@ def relieff_feature_score(X, y):
     return np.array(r_relieff_feature_score(X, y), dtype=float)
 
 
+class EdgeRFilterByExpr(BaseEstimator, SelectorMixin):
+    """edgeR filterByExpr feature selector for RNA-seq data
+    """
+    def __init__(self):
+        pass
+
+    def fit(self, X, y):
+        """
+        Parameters
+        ----------
+        X : array-like, shape = [n_samples, n_features]
+            The training input samples.
+
+        y : array-like, shape = [n_samples]
+            The target values (class labels in classification, real numbers in
+            regression).
+
+        Returns
+        -------
+        self : object
+            Returns self.
+        """
+        X, y = check_X_y(X, y, dtype=None)
+        self._mask = np.array(r_edger_filterbyexpr_mask(X, y), dtype=bool)
+        return self
+
+    def _get_support_mask(self):
+        check_is_fitted(self, '_mask')
+        return self._mask
+
+
+class LimmaVoom(BaseEstimator, SelectorMixin):
+    """limma-voom feature selector and transformer for RNA-seq data
+
+    Parameters
+    ----------
+    k : int or "all", optional, default="all"
+        Number of top features to select. The "all" option bypasses selection,
+        for use in a parameter search.
+
+    memory : None, str or object with the joblib.Memory interface, optional \
+        (default=None)
+        Used for internal caching. By default, no caching is done.
+        If a string is given, it is the path to the caching directory.
+
+    Attributes
+    ----------
+    scores_ : array, shape (n_features,)
+        Feature F values.
+
+    pvalues_ : array, shape (n_features,)
+        Feature FDR-adjusted p-values.
+
+    ref_sample_ : array, shape (n_features,)
+        edgeR TMM normalization reference sample feature vector.
+    """
+    def __init__(self, k='all', memory=None):
+        self.k = k
+        self.memory = memory
+
+    def fit(self, X, y):
+        """
+        Parameters
+        ----------
+        X : array-like, shape = [n_samples, n_features]
+            The training input samples.
+
+        y : array-like, shape = [n_samples]
+            The target values (class labels in classification, real numbers in
+            regression).
+
+        Returns
+        -------
+        self : object
+            Returns self.
+        """
+        X, y = check_X_y(X, y, dtype=None)
+        self._check_params(X, y)
+        memory = self.memory
+        if memory is None:
+            memory = Memory(cachedir=None, verbose=0)
+        elif isinstance(memory, six.string_types):
+            memory = Memory(cachedir=memory, verbose=0)
+        elif not isinstance(memory, Memory):
+            raise ValueError(
+                "'memory' should either be a string or"
+                " a sklearn.externals.joblib.Memory"
+                " instance, got 'memory={!r}' instead."
+                .format(type(memory)))
+        self.scores_, self.pvalues_ = (
+            memory.cache(limma_voom_feature_score)(X, y))
+        return self
+
+    def transform(self, X):
+        """
+        Parameters
+        ----------
+        X : array-like, shape = [n_samples, n_features]
+            The input data matrix.
+
+        Returns
+        -------
+        X_r : array of shape [n_samples, n_selected_features]
+            The transformed input data matrix with only the selected features.
+        """
+        check_is_fitted(self, 'scores_')
+        X = check_array(X, dtype=None)
+        if not hasattr(self, 'ref_sample_'):
+            xt, rs = r_edger_tmm_logcpm_transform(X)
+            X, self.ref_sample_ = (
+                np.array(xt, dtype=float), np.array(rs, dtype=float))
+        else:
+            xt, _ = r_edger_tmm_logcpm_transform(X, self.ref_sample_)
+            X = np.array(xt, dtype=float)
+        X = super().transform(X)
+        return X
+
+
+    def inverse_transform(self, X):
+        """
+        Parameters
+        ----------
+        X : array-like, shape = [n_samples, n_features]
+            The input data matrix.
+
+        Returns
+        -------
+        X_r : array of shape [n_samples, n_original_features]
+            `X` with columns of zeros inserted where features would have
+            been removed by :meth:`transform`.
+        """
+        raise NotImplementedError("inverse_transform not implemented.")
+
+    def _check_params(self, X, y):
+        if not (self.k == "all" or 0 <= self.k <= X.shape[1]):
+            raise ValueError(
+                "k should be 0 <= k <= n_features; got %r."
+                "Use k='all' to return all features."
+                % self.k)
+
+    def _get_support_mask(self):
+        check_is_fitted(self, 'scores_')
+        mask = np.zeros_like(self.scores_, dtype=bool)
+        if self.k == 'all':
+            mask = np.ones_like(self.scores_, dtype=bool)
+        elif self.k > 0:
+            mask[np.argsort(self.scores_, kind='mergesort')[-self.k:]] = True
+        return mask
+
+
 class LimmaScorerClassification(BaseScorer):
-    """Limma feature scorer for classification tasks.
+    """limma feature scorer for classification tasks.
 
     Parameters
     ----------
@@ -40,10 +197,10 @@ class LimmaScorerClassification(BaseScorer):
     Attributes
     ----------
     scores_ : array, shape (n_features,)
-        The set of F values.
+        Feature F values.
 
     pvalues_ : array, shape (n_features,)
-        The set of p-values.
+        Feature FDR-adjusted p-values.
     """
     def __init__(self, trend=False):
         self.trend = trend
@@ -66,7 +223,8 @@ class LimmaScorerClassification(BaseScorer):
         """
         self._check_params(X, y)
         f, pv = r_limma_feature_score(X, y, trend=self.trend)
-        self.scores_, self.pvalues_ = np.array(f, dtype=float), np.array(pv, dtype=float)
+        self.scores_, self.pvalues_ = (
+            np.array(f, dtype=float), np.array(pv, dtype=float))
         return self
 
     def _check_params(self, X, y):
@@ -111,7 +269,7 @@ class ColumnSelector(BaseEstimator, SelectorMixin):
         self : object
             Returns self.
         """
-        X, y = check_X_y(X, y)
+        X, y = check_X_y(X, y, dtype=None)
         self._check_params(X, y)
         self._n_features = X.shape[1]
         return self
@@ -123,8 +281,7 @@ class ColumnSelector(BaseEstimator, SelectorMixin):
                     raise ValueError(
                         "cols should be 0 <= col <= n_features; got %r."
                         "Use cols=None to return all features."
-                        % col
-                    )
+                        % col)
 
     def _get_support_mask(self):
         check_is_fitted(self, '_n_features')
@@ -163,9 +320,10 @@ class CFS(BaseEstimator, SelectorMixin):
         self : object
             Returns self.
         """
-        X, y = check_X_y(X, y)
+        X, y = check_X_y(X, y, dtype=None)
         self._n_features = X.shape[1]
-        warnings.filterwarnings('ignore', category=RRuntimeWarning, message="^Rjava\.init\.warning")
+        warnings.filterwarnings('ignore', category=RRuntimeWarning,
+                                message="^Rjava\.init\.warning")
         self.selected_idxs_ = np.array(r_cfs_feature_idxs(X, y), dtype=int)
         warnings.filterwarnings('always', category=RRuntimeWarning)
         return self
@@ -194,8 +352,8 @@ class FCBF(BaseEstimator, SelectorMixin):
 
     memory : None, str or object with the joblib.Memory interface, optional \
         (default=None)
-    Used for internal caching. By default, no caching is done.
-    If a string is given, it is the path to the caching directory.
+        Used for internal caching. By default, no caching is done.
+        If a string is given, it is the path to the caching directory.
 
     Attributes
     ----------
@@ -208,7 +366,6 @@ class FCBF(BaseEstimator, SelectorMixin):
         self.memory = memory
         self.selected_idxs_ = np.array([], dtype=int)
         self.scores_ = np.array([], dtype=float)
-        self._n_features = None
 
     def fit(self, X, y):
         """
@@ -226,7 +383,7 @@ class FCBF(BaseEstimator, SelectorMixin):
         self : object
             Returns self.
         """
-        X, y = check_X_y(X, y)
+        X, y = check_X_y(X, y, dtype=None)
         self._check_params(X, y)
         memory = self.memory
         if memory is None:
@@ -238,15 +395,17 @@ class FCBF(BaseEstimator, SelectorMixin):
                 "'memory' should either be a string or"
                 " a sklearn.externals.joblib.Memory"
                 " instance, got 'memory={!r}' instead."
-                .format(type(memory))
-            )
+                .format(type(memory)))
         self._n_features = X.shape[1]
         if self.k == 'all' or self.k > 0:
-            warnings.filterwarnings('ignore', category=RRuntimeWarning, message="^Rjava\.init\.warning")
-            feature_idxs, scores = memory.cache(fcbf_feature_idxs)(X, y, threshold=self.threshold)
+            warnings.filterwarnings('ignore', category=RRuntimeWarning,
+                                    message="^Rjava\.init\.warning")
+            feature_idxs, scores = memory.cache(fcbf_feature_idxs)(
+                X, y, threshold=self.threshold)
             warnings.filterwarnings('always', category=RRuntimeWarning)
             if self.k != 'all':
-                feature_idxs = feature_idxs[np.argsort(scores, kind='mergesort')[-self.k:]]
+                feature_idxs = feature_idxs[
+                    np.argsort(scores, kind='mergesort')[-self.k:]]
                 scores = np.sort(scores, kind='mergesort')[-self.k:]
             self.selected_idxs_ = np.sort(feature_idxs, kind='mergesort')
             self.scores_ = scores[np.argsort(feature_idxs, kind='mergesort')]
@@ -257,8 +416,7 @@ class FCBF(BaseEstimator, SelectorMixin):
             raise ValueError(
                 "k should be 0 <= k <= n_features; got %r."
                 "Use k='all' to return all features."
-                % self.k
-            )
+                % self.k)
 
     def _get_support_mask(self):
         check_is_fitted(self, 'selected_idxs_')
@@ -291,15 +449,16 @@ class ReliefF(BaseEstimator, SelectorMixin):
 
     memory : None, str or object with the joblib.Memory interface, optional \
         (default=None)
-    Used for internal caching. By default, no caching is done.
-    If a string is given, it is the path to the caching directory.
+        Used for internal caching. By default, no caching is done.
+        If a string is given, it is the path to the caching directory.
 
     Attributes
     ----------
     scores_ : array-like, shape=(n_features,)
         Feature scores
     """
-    def __init__(self, k=10, threshold=0, n_neighbors=20, sample_size=10, memory=None):
+    def __init__(self, k=10, threshold=0, n_neighbors=20, sample_size=10,
+                 memory=None):
         self.k = k
         self.threshold = threshold
         self.n_neighbors = n_neighbors
@@ -322,7 +481,7 @@ class ReliefF(BaseEstimator, SelectorMixin):
         self : object
             Returns self.
         """
-        X, y = check_X_y(X, y)
+        X, y = check_X_y(X, y, dtype=None)
         self._check_params(X, y)
         memory = self.memory
         if memory is None:
@@ -334,9 +493,9 @@ class ReliefF(BaseEstimator, SelectorMixin):
                 "'memory' should either be a string or"
                 " a sklearn.externals.joblib.Memory"
                 " instance, got 'memory={!r}' instead."
-                .format(type(memory))
-            )
-        warnings.filterwarnings('ignore', category=RRuntimeWarning, message="^Rjava\.init\.warning")
+                .format(type(memory)))
+        warnings.filterwarnings('ignore', category=RRuntimeWarning,
+                                message="^Rjava\.init\.warning")
         self.scores_ = memory.cache(relieff_feature_score)(X, y)
         warnings.filterwarnings('always', category=RRuntimeWarning)
         return self
@@ -346,8 +505,7 @@ class ReliefF(BaseEstimator, SelectorMixin):
             raise ValueError(
                 "k should be 0 <= k <= n_features; got %r."
                 "Use k='all' to return all features."
-                % self.k
-            )
+                % self.k)
 
     def _get_support_mask(self):
         check_is_fitted(self, 'scores_')

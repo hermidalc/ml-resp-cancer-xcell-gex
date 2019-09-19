@@ -5,20 +5,18 @@ recursive feature elimination algorithm.
 """
 
 from sklearn.feature_selection.mutual_info_ import (
-    mutual_info_regression, mutual_info_classif
-)
+    mutual_info_regression, mutual_info_classif)
 from sklearn.feature_selection.variance_threshold import VarianceThreshold
 from .univariate_selection import (
     chi2, f_classif, f_oneway, f_regression, SelectPercentile,
     SelectKBest, SelectFpr, SelectFdr, SelectFwe, GenericUnivariateSelect,
     ANOVAFScorerClassification, ANOVAFScorerRegression, Chi2Scorer,
-    MutualInfoScorerClassification, MutualInfoScorerRegression
-)
+    MutualInfoScorerClassification, MutualInfoScorerRegression)
 from .from_model import SelectFromModel
 from .rfe import RFE, RFECV
-from .custom import (
-    CFS, ColumnSelector, FCBF, LimmaScorerClassification, ReliefF
-)
+from .custom_selection import (
+    CFS, ColumnSelector, EdgeRFilterByExpr, FCBF, LimmaScorerClassification,
+    LimmaVoom, ReliefF)
 
 
 __all__ = ['chi2',
@@ -44,6 +42,8 @@ __all__ = ['chi2',
            'MutualInfoScorerRegression',
            'CFS',
            'ColumnSelector',
+           'EdgeRFilterByExpr',
            'FCBF',
            'LimmaScorerClassification',
+           'LimmaVoom',
            'ReliefF']

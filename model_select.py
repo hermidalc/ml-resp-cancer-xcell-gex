@@ -45,9 +45,9 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 sys.path.insert(1, sys.path[0] + '/lib/python3')
 from feature_selection import (
-    ANOVAFScorerClassification, CFS, Chi2Scorer, ColumnSelector, FCBF, LimmaScorerClassification,
-    MutualInfoScorerClassification, ReliefF, RFE, SelectFromModel, SelectKBest
-)
+    ANOVAFScorerClassification, CFS, Chi2Scorer, ColumnSelector,
+    EdgeRFilterByExpr, FCBF, LimmaScorerClassification, LimmaVoom,
+    MutualInfoScorerClassification, ReliefF, RFE, SelectFromModel, SelectKBest)
 
 def str_list(arg):
     return list(map(str, arg.split(',')))
@@ -938,6 +938,24 @@ pipelines = {
                     'fs2__estimator__max_features': FS_RFE_GRB_F,
                     'fs2__step': FS_RFE_STEP,
                     'fs2__n_features_to_select': FS_SKB_K,
+                },
+            ],
+        },
+        'EdgeRFilterByExpr': {
+            'steps': [
+                ('fs2', EdgeRFilterByExpr()),
+            ],
+            'param_grid': [
+                { },
+            ],
+        },
+        'LimmaVoom': {
+            'steps': [
+                ('fs2', LimmaVoom(memory=memory)),
+            ],
+            'param_grid': [
+                {
+                    'fs2__k': FS_SKB_K,
                 },
             ],
         },
