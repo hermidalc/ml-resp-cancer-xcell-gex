@@ -15,8 +15,8 @@ from .univariate_selection import (
 from .from_model import SelectFromModel
 from .rfe import RFE, RFECV
 from .custom_selection import (
-    CFS, ColumnSelector, EdgeRFilterByExpr, FCBF, LimmaScorerClassification,
-    LimmaVoom, ReliefF)
+    CFS, ColumnSelector, EdgeR, EdgeRFilterByExpr, FCBF,
+    LimmaScorerClassification, LimmaVoom, ReliefF)
 
 
 __all__ = ['chi2',
@@ -42,6 +42,7 @@ __all__ = ['chi2',
            'MutualInfoScorerRegression',
            'CFS',
            'ColumnSelector',
+           'EdgeR',
            'EdgeRFilterByExpr',
            'FCBF',
            'LimmaScorerClassification',

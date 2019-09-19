@@ -80,6 +80,23 @@ edger_tmm_logcpm_transform <- function(X, ref_sample=NULL, prior_count=1) {
     return(list(t(log_cpm), ref_sample))
 }
 
+edger_feature_score <- function(X, y, prior_count=1) {
+    suppressPackageStartupMessages(library("edgeR"))
+    counts <- t(X)
+    dge <- DGEList(counts=counts, group=y)
+    dge <- calcNormFactors(dge, method="TMM")
+    design <- model.matrix(~factor(y))
+    dge <- estimateDisp(dge, design)
+    fit <- glmQLFit(dge, design)
+    qlt <- glmQLFTest(fit, coef=ncol(design))
+    results <- as.data.frame(topTags(
+        qlt, n=Inf, adjust.method="BH", sort.by="none"
+    ))
+    results <- results[order(as.integer(row.names(results))), , drop=FALSE]
+    log_cpm <- cpm(dge, log=TRUE, prior.count=prior_count)
+    return(list(results$F, results$FDR, t(log_cpm)))
+}
+
 limma_voom_feature_score <- function(X, y, prior_count=1) {
     suppressPackageStartupMessages(library("edgeR"))
     suppressPackageStartupMessages(library("limma"))
