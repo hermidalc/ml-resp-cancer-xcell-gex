@@ -15,6 +15,7 @@ from .univariate_selection import BaseScorer
 r_base = importr('base')
 r_base.source('functions.R')
 r_edger_filterbyexpr_mask = robjects.globalenv['edger_filterbyexpr_mask']
+r_edger_tmm_ref_sample = robjects.globalenv['edger_tmm_ref_sample']
 r_edger_tmm_logcpm_transform = robjects.globalenv['edger_tmm_logcpm_transform']
 r_limma_voom_feature_score = robjects.globalenv['limma_voom_feature_score']
 r_limma_feature_score = robjects.globalenv['limma_feature_score']
@@ -24,8 +25,9 @@ r_relieff_feature_score = robjects.globalenv['relieff_feature_score']
 numpy2ri.activate()
 
 def limma_voom_feature_score(X, y):
-    f, pv = r_limma_voom_feature_score(X, y)
-    return np.array(f, dtype=float), np.array(pv, dtype=float)
+    f, pv, xt = r_limma_voom_feature_score(X, y)
+    return (np.array(f, dtype=float), np.array(pv, dtype=float),
+            np.array(xt, dtype=float))
 
 def fcbf_feature_idxs(X, y, threshold=0):
     idxs, scores = r_fcbf_feature_idxs(X, y, threshold=threshold)
@@ -100,7 +102,7 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
         Parameters
         ----------
         X : array-like, shape = [n_samples, n_features]
-            The training input samples.
+            The training input counts data matrix.
 
         y : array-like, shape = [n_samples]
             The target values (class labels in classification, real numbers in
@@ -124,7 +126,7 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
                 " a sklearn.externals.joblib.Memory"
                 " instance, got 'memory={!r}' instead."
                 .format(type(memory)))
-        self.scores_, self.pvalues_ = (
+        self.scores_, self.pvalues_, self.log_cpms_ = (
             memory.cache(limma_voom_feature_score)(X, y))
         return self
 
@@ -133,25 +135,23 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
         Parameters
         ----------
         X : array-like, shape = [n_samples, n_features]
-            The input data matrix.
+            The input counts data matrix.
 
         Returns
         -------
         X_r : array of shape [n_samples, n_selected_features]
-            The transformed input data matrix with only the selected features.
+            The TMM log-CPM transformed input data matrix with only the
+            selected features.
         """
-        check_is_fitted(self, 'scores_')
+        check_is_fitted(self, 'log_cpms_')
         X = check_array(X, dtype=None)
-        if not hasattr(self, 'ref_sample_'):
-            xt, rs = r_edger_tmm_logcpm_transform(X)
-            X, self.ref_sample_ = (
-                np.array(xt, dtype=float), np.array(rs, dtype=float))
+        if hasattr(self, 'ref_sample_'):
+            X = np.array(r_edger_tmm_logcpm_transform(X, self.ref_sample_)[0],
+                         dtype=float)
         else:
-            xt, _ = r_edger_tmm_logcpm_transform(X, self.ref_sample_)
-            X = np.array(xt, dtype=float)
-        X = super().transform(X)
-        return X
-
+            self.ref_sample_ = r_edger_tmm_ref_sample(X)
+            X = self.log_cpms_
+        return super().transform(X)
 
     def inverse_transform(self, X):
         """
@@ -190,9 +190,11 @@ class LimmaScorerClassification(BaseScorer):
 
     Parameters
     ----------
+    robust : bool, default=False
+        limma eBayes robust
+
     trend : bool, default=False
-        When data is RNA-seq FPKM/RPKM/TPM normalized count data set eBayes
-        trend=True
+        limma eBayes trend
 
     Attributes
     ----------
@@ -202,7 +204,8 @@ class LimmaScorerClassification(BaseScorer):
     pvalues_ : array, shape (n_features,)
         Feature FDR-adjusted p-values.
     """
-    def __init__(self, trend=False):
+    def __init__(self, robust=False, trend=False):
+        self.robust = robust
         self.trend = trend
 
     def fit(self, X, y):
@@ -223,8 +226,8 @@ class LimmaScorerClassification(BaseScorer):
         """
         self._check_params(X, y)
         f, pv = r_limma_feature_score(X, y, trend=self.trend)
-        self.scores_, self.pvalues_ = (
-            np.array(f, dtype=float), np.array(pv, dtype=float))
+        self.scores_ = np.array(f, dtype=float)
+        self.pvalues_ = np.array(pv, dtype=float)
         return self
 
     def _check_params(self, X, y):

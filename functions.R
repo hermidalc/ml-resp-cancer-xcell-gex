@@ -45,8 +45,8 @@ edger_filterbyexpr_mask <- function(X, y) {
     return(filterByExpr(DGEList(counts=t(X), group=y)))
 }
 
-edger_logcpm_transform <- function(X) {
-    return(t(edgeR::cpm(t(X), log=TRUE, prior.count=1)))
+edger_logcpm_transform <- function(X, prior.count=1) {
+    return(t(edgeR::cpm(t(X), log=TRUE, prior.count=prior.count)))
 }
 
 # from edgeR codebase
@@ -56,29 +56,35 @@ edger_tmm_ref_column <- function(counts, lib.size=colSums(counts), p=0.75) {
     ref_column <- which.min(abs(f - mean(f)))
 }
 
-edger_tmm_logcpm_transform <- function(X, ref_sample=NULL) {
+edger_tmm_ref_sample <- function(X) {
+    counts <- t(X)
+    return(counts[, edger_tmm_ref_column(counts=counts)])
+}
+
+edger_tmm_logcpm_transform <- function(X, ref_sample=NULL, prior.count=1) {
     suppressPackageStartupMessages(library("edgeR"))
     counts <- t(X)
     if (is.null(ref_sample)) {
         dge <- DGEList(counts=counts)
         dge <- calcNormFactors(dge, method="TMM")
-        log_cpm <- cpm(dge, log=TRUE, prior.count=1)
+        log_cpm <- cpm(dge, log=TRUE, prior.count=prior.count)
         ref_sample <- counts[, edger_tmm_ref_column(counts=counts)]
     } else {
         counts <- cbind(counts, ref_sample)
         colnames(counts) <- NULL
         dge <- DGEList(counts=counts)
         dge <- calcNormFactors(dge, method="TMM", refColumn=ncol(dge))
-        log_cpm <- cpm(dge, log=TRUE, prior.count=1)
+        log_cpm <- cpm(dge, log=TRUE, prior.count=prior.count)
         log_cpm <- log_cpm[, -ncol(log_cpm)]
     }
     return(list(t(log_cpm), ref_sample))
 }
 
-limma_voom_feature_score <- function(X, y) {
+limma_voom_feature_score <- function(X, y, prior.count=1) {
     suppressPackageStartupMessages(library("edgeR"))
     suppressPackageStartupMessages(library("limma"))
-    dge <- DGEList(counts=t(X), group=y)
+    counts <- t(X)
+    dge <- DGEList(counts=counts, group=y)
     dge <- calcNormFactors(dge, method="TMM")
     design <- model.matrix(~0 + factor(y))
     colnames(design) <- c("Class0", "Class1")
@@ -90,7 +96,8 @@ limma_voom_feature_score <- function(X, y) {
     fit <- eBayes(fit)
     results <- topTableF(fit, number=Inf, adjust.method="BH", sort.by="none")
     results <- results[order(as.integer(row.names(results))), , drop=FALSE]
-    return(list(results$F, results$adj.P.Val))
+    log_cpm <- cpm(dge, log=TRUE, prior.count=prior.count)
+    return(list(results$F, results$adj.P.Val, t(log_cpm)))
 }
 
 limma_feature_score <- function(X, y, robust=FALSE, trend=FALSE) {
