@@ -14,8 +14,9 @@ from .univariate_selection import BaseScorer
 
 r_base = importr('base')
 r_base.source('functions.R')
+r_deseq2_vst_transform = robjects.globalenv['deseq2_vst_transform']
+r_deseq2_feature_score = robjects.globalenv['deseq2_feature_score']
 r_edger_filterbyexpr_mask = robjects.globalenv['edger_filterbyexpr_mask']
-r_edger_tmm_ref_sample = robjects.globalenv['edger_tmm_ref_sample']
 r_edger_tmm_logcpm_transform = robjects.globalenv['edger_tmm_logcpm_transform']
 r_edger_feature_score = robjects.globalenv['edger_feature_score']
 r_limma_voom_feature_score = robjects.globalenv['limma_voom_feature_score']
@@ -25,15 +26,21 @@ r_fcbf_feature_idxs = robjects.globalenv['fcbf_feature_idxs']
 r_relieff_feature_score = robjects.globalenv['relieff_feature_score']
 numpy2ri.activate()
 
+def deseq2_feature_score(X, y, blind, fit_type):
+    pv, xt, lg, sf, df = r_deseq2_feature_score(X, y, blind=blind,
+                                                fit_type=fit_type)
+    return (np.array(pv, dtype=float), np.array(xt, dtype=float),
+            np.array(lg, dtype=float), np.array(sf, dtype=float), df)
+
 def edger_feature_score(X, y, prior_count):
-    f, pv, xt = r_edger_feature_score(X, y, prior_count=prior_count)
+    f, pv, xt, rs = r_edger_feature_score(X, y, prior_count=prior_count)
     return (np.array(f, dtype=float), np.array(pv, dtype=float),
-            np.array(xt, dtype=float))
+            np.array(xt, dtype=float), np.array(rs, dtype=float))
 
 def limma_voom_feature_score(X, y, prior_count):
-    f, pv, xt = r_limma_voom_feature_score(X, y, prior_count=prior_count)
+    f, pv, xt, rs = r_limma_voom_feature_score(X, y, prior_count=prior_count)
     return (np.array(f, dtype=float), np.array(pv, dtype=float),
-            np.array(xt, dtype=float))
+            np.array(xt, dtype=float), np.array(rs, dtype=float))
 
 def fcbf_feature_idxs(X, y, threshold):
     idxs, scores = r_fcbf_feature_idxs(X, y, threshold=threshold)
@@ -45,8 +52,139 @@ def relieff_feature_score(X, y, num_neighbors, sample_size):
                     dtype=float)
 
 
+class DESeq2(BaseEstimator, SelectorMixin):
+    """DESeq2 feature selector and normalizer/transformer for RNA-seq data
+
+    Parameters
+    ----------
+    k : int or "all" (default = "all")
+        Number of top features to select. The "all" option bypasses selection,
+        for use in a parameter search.
+
+    blind : bool (default = False)
+        DESeq2 varianceStabilizingTransformation() blind option
+
+    fit_type : str (default = local)
+        DESeq2 estimateDispersions() fitType option
+
+    memory : None, str or object with the joblib.Memory interface \
+        (default = None)
+        Used for internal caching. By default, no caching is done.
+        If a string is given, it is the path to the caching directory.
+
+    Attributes
+    ----------
+    pvalues_ : array, shape (n_features,)
+        Feature FDR-adjusted p-values.
+
+    log_geomeans_ : array, shape (n_features,)
+        log(geometric mean) of each feature.
+
+    size_factors_ : array, shape (n_features,)
+        DESeq2 normalization size factors
+
+    disp_func_ : R/rpy2 function
+        DESeq2 normalization dispersion function
+    """
+    def __init__(self, k='all', blind=False, fit_type='local', memory=None):
+        self.k = k
+        self.blind = blind
+        self.fit_type = fit_type
+        self.memory = memory
+
+    def fit(self, X, y):
+        """
+        Parameters
+        ----------
+        X : array-like, shape = (n_samples, n_features)
+            The training input counts data matrix.
+
+        y : array-like, shape = (n_samples,)
+            The target values (class labels in classification, real numbers in
+            regression).
+
+        Returns
+        -------
+        self : object
+            Returns self.
+        """
+        X, y = check_X_y(X, y, dtype=None)
+        self._check_params(X, y)
+        memory = self.memory
+        if memory is None:
+            memory = Memory(cachedir=None, verbose=0)
+        elif isinstance(memory, six.string_types):
+            memory = Memory(cachedir=memory, verbose=0)
+        elif not isinstance(memory, Memory):
+            raise ValueError(
+                "'memory' should either be a string or"
+                " a sklearn.externals.joblib.Memory"
+                " instance, got 'memory={!r}' instead."
+                .format(type(memory)))
+        (self.pvalues_, self._vst_data, self.log_geomeans_, self.size_factors_,
+            self.disp_func_) = (memory.cache(deseq2_feature_score)(
+                X, y, blind=self.blind, fit_type=self.fit_type))
+        return self
+
+    def transform(self, X):
+        """
+        Parameters
+        ----------
+        X : array-like, shape = (n_samples, n_features)
+            The input counts data matrix.
+
+        Returns
+        -------
+        Xr : array of shape (n_samples, n_selected_features)
+            DESeq2 median-of-ratios normalized VST transformed input data
+            matrix with only the selected features.
+        """
+        check_is_fitted(self, '_vst_data')
+        X = check_array(X, dtype=None)
+        if hasattr(self, '_train_done'):
+            X = np.array(r_deseq2_vst_transform(
+                X, log_geomeans=self.log_geomeans_,
+                size_factors=self.size_factors_, disp_func=self.disp_func_,
+                blind=self.blind, fit_type=self.fit_type)[0], dtype=float)
+        else:
+            X = self._vst_data
+            self._train_done = True
+        return super().transform(X)
+
+    def inverse_transform(self, X):
+        """
+        Parameters
+        ----------
+        X : array-like, shape = (n_samples, n_features)
+            The input data matrix.
+
+        Returns
+        -------
+        Xr : array of shape (n_samples, n_original_features)
+            `X` with columns of zeros inserted where features would have
+            been removed by :meth:`transform`.
+        """
+        raise NotImplementedError("inverse_transform not implemented.")
+
+    def _check_params(self, X, y):
+        if not (self.k == "all" or 0 <= self.k <= X.shape[1]):
+            raise ValueError(
+                "k should be 0 <= k <= n_features; got %r."
+                "Use k='all' to return all features."
+                % self.k)
+
+    def _get_support_mask(self):
+        check_is_fitted(self, 'pvalues_')
+        mask = np.zeros_like(self.pvalues_, dtype=bool)
+        if self.k == 'all':
+            mask = np.ones_like(self.pvalues_, dtype=bool)
+        elif self.k > 0:
+            mask[np.argsort(self.pvalues_, kind='mergesort')[:self.k]] = True
+        return mask
+
+
 class EdgeR(BaseEstimator, SelectorMixin):
-    """EdgeR feature selector and transformer for RNA-seq data
+    """edgeR feature selector and normalizer/transformer for RNA-seq data
 
     Parameters
     ----------
@@ -55,10 +193,9 @@ class EdgeR(BaseEstimator, SelectorMixin):
         for use in a parameter search.
 
     prior_count : int (default = 1)
-        Average count to be added to each observation to avoid taking log of
-        zero. Larger values for prior.count produce stronger moderation of the
-        values for low counts and more shrinkage of the corresponding log
-        fold-changes.
+        Average count to add to each observation to avoid taking log of zero.
+        Larger values for produce stronger moderation of the values for low
+        counts and more shrinkage of the corresponding log fold changes.
 
     memory : None, str or object with the joblib.Memory interface \
         (default = None)
@@ -110,7 +247,7 @@ class EdgeR(BaseEstimator, SelectorMixin):
                 " a sklearn.externals.joblib.Memory"
                 " instance, got 'memory={!r}' instead."
                 .format(type(memory)))
-        self.scores_, self.pvalues_, self.log_cpms_ = (
+        self.scores_, self.pvalues_, self._log_cpms, self.ref_sample_ = (
             memory.cache(edger_feature_score)(
                 X, y, prior_count=self.prior_count))
         return self
@@ -125,19 +262,19 @@ class EdgeR(BaseEstimator, SelectorMixin):
         Returns
         -------
         X_r : array of shape (n_samples, n_selected_features)
-            The TMM normalized log-CPM transformed input data matrix with only
-            the selected features.
+            edgeR TMM normalized log-CPM transformed input data matrix with
+            only the selected features.
         """
-        check_is_fitted(self, 'log_cpms_')
+        check_is_fitted(self, '_log_cpms')
         X = check_array(X, dtype=None)
-        if hasattr(self, 'ref_sample_'):
+        if hasattr(self, '_train_done'):
             X = np.array(r_edger_tmm_logcpm_transform(
                 X, ref_sample=self.ref_sample_,
                 prior_count=self.prior_count)[0],
                          dtype=float)
         else:
-            self.ref_sample_ = np.array(r_edger_tmm_ref_sample(X), dtype=float)
-            X = self.log_cpms_
+            X = self._log_cpms
+            self._train_done = True
         return super().transform(X)
 
     def inverse_transform(self, X):
@@ -183,7 +320,7 @@ class EdgeRFilterByExpr(BaseEstimator, SelectorMixin):
         Parameters
         ----------
         X : array-like, shape = (n_samples, n_features)
-            The training input samples.
+            The input counts data matrix.
 
         y : array-like, shape = (n_samples,)
             The target values (class labels in classification, real numbers in
@@ -204,7 +341,7 @@ class EdgeRFilterByExpr(BaseEstimator, SelectorMixin):
 
 
 class LimmaVoom(BaseEstimator, SelectorMixin):
-    """limma-voom feature selector and transformer for RNA-seq data
+    """limma-voom feature selector and normalizer/transformer for RNA-seq data
 
     Parameters
     ----------
@@ -213,10 +350,9 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
         for use in a parameter search.
 
     prior_count : int (default = 1)
-        Average count to be added to each observation to avoid taking log of
-        zero. Larger values for prior.count produce stronger moderation of the
-        values for low counts and more shrinkage of the corresponding log
-        fold-changes.
+        Average count to add to each observation to avoid taking log of zero.
+        Larger values for produce stronger moderation of the values for low
+        counts and more shrinkage of the corresponding log fold changes.
 
     memory : None, str or object with the joblib.Memory interface \
         (default = None)
@@ -268,7 +404,7 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
                 " a sklearn.externals.joblib.Memory"
                 " instance, got 'memory={!r}' instead."
                 .format(type(memory)))
-        self.scores_, self.pvalues_, self.log_cpms_ = (
+        self.scores_, self.pvalues_, self._log_cpms, self.ref_sample_ = (
             memory.cache(limma_voom_feature_score)(
                 X, y, prior_count=self.prior_count))
         return self
@@ -283,19 +419,19 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
         Returns
         -------
         X_r : array of shape (n_samples, n_selected_features)
-            The TMM normalized log-CPM transformed input data matrix with only
-            the selected features.
+            edgeR TMM normalized log-CPM transformed input data matrix with
+            only the selected features.
         """
-        check_is_fitted(self, 'log_cpms_')
+        check_is_fitted(self, '_log_cpms')
         X = check_array(X, dtype=None)
-        if hasattr(self, 'ref_sample_'):
+        if hasattr(self, '_train_done'):
             X = np.array(r_edger_tmm_logcpm_transform(
                 X, ref_sample=self.ref_sample_,
                 prior_count=self.prior_count)[0],
                          dtype=float)
         else:
-            self.ref_sample_ = np.array(r_edger_tmm_ref_sample(X), dtype=float)
-            X = self.log_cpms_
+            X = self._log_cpms
+            self._train_done = True
         return super().transform(X)
 
     def inverse_transform(self, X):

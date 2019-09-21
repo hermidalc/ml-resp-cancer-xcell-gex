@@ -40,6 +40,52 @@ data_corr_col_idxs <- function(X, cutoff=0.5) {
     return(sort(caret::findCorrelation(cor(X), cutoff=cutoff)) - 1)
 }
 
+deseq2_vst_transform <- function(
+    X, y=NULL, log_geomeans=NULL, size_factors=NULL, disp_func=NULL,
+    blind=FALSE, fit_type="local"
+) {
+    suppressPackageStartupMessages(library("DESeq2"))
+    counts <- t(X)
+    if (!is.null(y)) {
+        log_geomeans <- rowMeans(log(counts))
+        dds <- DESeqDataSetFromMatrix(
+            counts, data.frame(Class=factor(y)), ~Class
+        )
+        dds <- estimateSizeFactors(dds)
+        dds <- estimateDispersions(dds, fitType=fit_type, quiet=TRUE)
+    } else {
+        dds <- DESeqDataSetFromMatrix(
+            counts, data.frame(row.names=seq(1, ncol(counts))), ~1
+        )
+        sizeFactors(dds) <- apply(counts, 2, function(x)
+            exp(median(
+                (log(x) - log_geomeans)[is.finite(log_geomeans) & x > 0]
+            ))
+        )
+        dispersionFunction(dds, estimateVar=FALSE) <- disp_func
+    }
+    vsd <- varianceStabilizingTransformation(dds, blind=blind, fitType=fit_type)
+    return(list(
+        t(as.matrix(assay(vsd))), log_geomeans, sizeFactors(dds),
+        dispersionFunction(dds)
+    ))
+}
+
+deseq2_feature_score <- function(X, y, blind=FALSE, fit_type="local") {
+    suppressPackageStartupMessages(library("DESeq2"))
+    counts <- t(X)
+    log_geomeans <- rowMeans(log(counts))
+    dds <- DESeqDataSetFromMatrix(counts, data.frame(Class=factor(y)), ~Class)
+    dds <- DESeq(dds, fitType=fit_type, quiet=TRUE)
+    results <- as.data.frame(results(dds))
+    results <- results[order(as.integer(row.names(results))), , drop=FALSE]
+    vsd <- varianceStabilizingTransformation(dds, blind=blind, fitType=fit_type)
+    return(list(
+        results$padj, t(as.matrix(assay(vsd))), log_geomeans, sizeFactors(dds),
+        dispersionFunction(dds)
+    ))
+}
+
 edger_filterbyexpr_mask <- function(X, y) {
     suppressPackageStartupMessages(library("edgeR"))
     return(filterByExpr(DGEList(counts=t(X), group=y)))
@@ -56,11 +102,6 @@ edger_tmm_ref_column <- function(counts, lib.size=colSums(counts), p=0.75) {
     ref_column <- which.min(abs(f - mean(f)))
 }
 
-edger_tmm_ref_sample <- function(X) {
-    counts <- t(X)
-    return(counts[, edger_tmm_ref_column(counts=counts)])
-}
-
 edger_tmm_logcpm_transform <- function(X, ref_sample=NULL, prior_count=1) {
     suppressPackageStartupMessages(library("edgeR"))
     counts <- t(X)
@@ -68,7 +109,7 @@ edger_tmm_logcpm_transform <- function(X, ref_sample=NULL, prior_count=1) {
         dge <- DGEList(counts=counts)
         dge <- calcNormFactors(dge, method="TMM")
         log_cpm <- cpm(dge, log=TRUE, prior.count=prior_count)
-        ref_sample <- counts[, edger_tmm_ref_column(counts=counts)]
+        ref_sample <- counts[, edger_tmm_ref_column(counts)]
     } else {
         counts <- cbind(counts, ref_sample)
         colnames(counts) <- NULL
@@ -94,7 +135,8 @@ edger_feature_score <- function(X, y, prior_count=1) {
     ))
     results <- results[order(as.integer(row.names(results))), , drop=FALSE]
     log_cpm <- cpm(dge, log=TRUE, prior.count=prior_count)
-    return(list(results$F, results$FDR, t(log_cpm)))
+    ref_sample <- counts[, edger_tmm_ref_column(counts)]
+    return(list(results$F, results$FDR, t(log_cpm), ref_sample))
 }
 
 limma_voom_feature_score <- function(X, y, prior_count=1) {
@@ -114,7 +156,8 @@ limma_voom_feature_score <- function(X, y, prior_count=1) {
     results <- topTableF(fit, number=Inf, adjust.method="BH", sort.by="none")
     results <- results[order(as.integer(row.names(results))), , drop=FALSE]
     log_cpm <- cpm(dge, log=TRUE, prior.count=prior_count)
-    return(list(results$F, results$adj.P.Val, t(log_cpm)))
+    ref_sample <- counts[, edger_tmm_ref_column(counts)]
+    return(list(results$F, results$adj.P.Val, t(log_cpm), ref_sample))
 }
 
 limma_feature_score <- function(X, y, robust=FALSE, trend=FALSE) {
