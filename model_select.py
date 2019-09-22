@@ -214,7 +214,6 @@ if args.scv_size >= 1.0: args.scv_size = int(args.scv_size)
 if args.scv_refit == 'avg_pre': args.scv_refit = 'average_precision'
 elif args.scv_refit == 'bcr': args.scv_refit = 'balanced_accuracy'
 
-
 if args.filter_warnings:
     if args.parallel_backend == 'multiprocessing':
         # ignore sklearn >= 0.20 LinearSVC convergence warnings
@@ -228,7 +227,6 @@ if args.filter_warnings:
         os.environ['PYTHONWARNINGS'] = (
             'ignore:Liblinear failed to converge:UserWarning:sklearn.svm.base,' +
             'ignore:Variables are collinear:UserWarning:sklearn.discriminant_analysis')
-
 
 r_base = importr('base')
 r_biobase = importr('Biobase')
@@ -944,10 +942,30 @@ pipelines = {
         },
         'EdgeRFilterByExpr': {
             'steps': [
-                ('fs2', EdgeRFilterByExpr()),
+                ('fs1', EdgeRFilterByExpr()),
             ],
             'param_grid': [
                 { },
+            ],
+        },
+        'DESeq2': {
+            'steps': [
+                ('fs2', DESeq2(memory=memory)),
+            ],
+            'param_grid': [
+                {
+                    'fs2__k': FS_SKB_K,
+                },
+            ],
+        },
+        'EdgeR': {
+            'steps': [
+                ('fs2', EdgeR(memory=memory)),
+            ],
+            'param_grid': [
+                {
+                    'fs2__k': FS_SKB_K,
+                },
             ],
         },
         'LimmaVoom': {

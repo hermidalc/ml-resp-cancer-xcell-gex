@@ -71,12 +71,14 @@ data_types <- c(
 )
 norm_methods <- c(
     "none",
+    "counts",
     "fpkm",
     "rpkm",
     "tpm"
 )
 feat_types <- c(
     "none",
+    "ensembl",
     "symbol"
 )
 prep_methods <- c(
