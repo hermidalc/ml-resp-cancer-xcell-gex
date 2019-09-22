@@ -27,10 +27,10 @@ r_relieff_feature_score = robjects.globalenv['relieff_feature_score']
 numpy2ri.activate()
 
 def deseq2_feature_score(X, y, blind, fit_type):
-    pv, xt, lg, sf, df = r_deseq2_feature_score(X, y, blind=blind,
+    pv, xt, gm, sf, df = r_deseq2_feature_score(X, y, blind=blind,
                                                 fit_type=fit_type)
     return (np.array(pv, dtype=float), np.array(xt, dtype=float),
-            np.array(lg, dtype=float), np.array(sf, dtype=float), df)
+            np.array(gm, dtype=float), np.array(sf, dtype=float), df)
 
 def edger_feature_score(X, y, prior_count):
     f, pv, xt, rs = r_edger_feature_score(X, y, prior_count=prior_count)
@@ -77,8 +77,8 @@ class DESeq2(BaseEstimator, SelectorMixin):
     pvalues_ : array, shape (n_features,)
         Feature FDR-adjusted p-values.
 
-    log_geomeans_ : array, shape (n_features,)
-        log(geometric mean) of each feature.
+    geo_means_ : array, shape (n_features,)
+        Feature geometric means.
 
     size_factors_ : array, shape (n_features,)
         DESeq2 normalization size factors
@@ -121,7 +121,7 @@ class DESeq2(BaseEstimator, SelectorMixin):
                 " a sklearn.externals.joblib.Memory"
                 " instance, got 'memory={!r}' instead."
                 .format(type(memory)))
-        (self.pvalues_, self._vst_data, self.log_geomeans_, self.size_factors_,
+        (self.pvalues_, self._vst_data, self.geo_means_, self.size_factors_,
             self.disp_func_) = (memory.cache(deseq2_feature_score)(
                 X, y, blind=self.blind, fit_type=self.fit_type))
         return self
@@ -143,9 +143,9 @@ class DESeq2(BaseEstimator, SelectorMixin):
         X = check_array(X, dtype=None)
         if hasattr(self, '_train_done'):
             X = np.array(r_deseq2_vst_transform(
-                X, log_geomeans=self.log_geomeans_,
-                size_factors=self.size_factors_, disp_func=self.disp_func_,
-                blind=self.blind, fit_type=self.fit_type)[0], dtype=float)
+                X, geo_means=self.geo_means_, size_factors=self.size_factors_,
+                disp_func=self.disp_func_, blind=self.blind,
+                fit_type=self.fit_type)[0], dtype=float)
         else:
             X = self._vst_data
             self._train_done = True

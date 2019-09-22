@@ -15,9 +15,9 @@ r_edger_tmm_logcpm_transform = robjects.globalenv['edger_tmm_logcpm_transform']
 numpy2ri.activate()
 
 def deseq2_vst_transform(X, y, blind, fit_type):
-    xt, lg, sf, df = r_deseq2_vst_transform(X, y, blind=blind,
+    xt, gm, sf, df = r_deseq2_vst_transform(X, y, blind=blind,
                                             fit_type=fit_type)
-    return (np.array(xt, dtype=float), np.array(lg, dtype=float),
+    return (np.array(xt, dtype=float), np.array(gm, dtype=float),
             np.array(sf, dtype=float), df)
 
 def edger_tmm_logcpm_transform(X, prior_count):
@@ -46,8 +46,8 @@ class DESeq2MRNVSTransformer(TransformerMixin, BaseEstimator):
     size_factors_ : array, shape (n_features,)
         DESeq2 normalization size factors
 
-    log_geomeans_ : array, shape (n_features,)
-        log(geometric mean) of each feature.
+    geo_means_ : array, shape (n_features,)
+        Feature geometric means.
 
     disp_func_ : R/rpy2 function
         DESeq2 normalization dispersion function
@@ -80,7 +80,7 @@ class DESeq2MRNVSTransformer(TransformerMixin, BaseEstimator):
                 " a sklearn.externals.joblib.Memory"
                 " instance, got 'memory={!r}' instead."
                 .format(type(memory)))
-        (self._vst_data, self.log_geomeans_, self.size_factors_,
+        (self._vst_data, self.geo_means_, self.size_factors_,
          self.disp_func_) = (memory.cache(deseq2_vst_transform)(
                 X, y, blind=self.blind, fit_type=self.fit_type))
         return self
@@ -102,9 +102,9 @@ class DESeq2MRNVSTransformer(TransformerMixin, BaseEstimator):
         X = check_array(X, dtype=None)
         if hasattr(self, '_train_done'):
             X = np.array(r_deseq2_vst_transform(
-                X, log_geomeans=self.log_geomeans_,
-                size_factors=self.size_factors_, disp_func=self.disp_func_,
-                blind=self.blind, fit_type=self.fit_type)[0], dtype=float)
+                X, geo_means=self.geo_means_, size_factors=self.size_factors_,
+                disp_func=self.disp_func_, blind=self.blind,
+                fit_type=self.fit_type)[0], dtype=float)
         else:
             X = self._vst_data
             self._train_done = True

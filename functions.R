@@ -41,32 +41,28 @@ data_corr_col_idxs <- function(X, cutoff=0.5) {
 }
 
 deseq2_vst_transform <- function(
-    X, y=NULL, log_geomeans=NULL, size_factors=NULL, disp_func=NULL,
+    X, y=NULL, geo_means=NULL, size_factors=NULL, disp_func=NULL,
     blind=FALSE, fit_type="local"
 ) {
     suppressPackageStartupMessages(library("DESeq2"))
     counts <- t(X)
     if (!is.null(y)) {
-        log_geomeans <- rowMeans(log(counts))
+        geo_means <- exp(rowMeans(log(counts)))
         dds <- DESeqDataSetFromMatrix(
             counts, data.frame(Class=factor(y)), ~Class
         )
-        dds <- estimateSizeFactors(dds)
+        dds <- estimateSizeFactors(dds, quiet=TRUE)
         dds <- estimateDispersions(dds, fitType=fit_type, quiet=TRUE)
     } else {
         dds <- DESeqDataSetFromMatrix(
             counts, data.frame(row.names=seq(1, ncol(counts))), ~1
         )
-        sizeFactors(dds) <- apply(counts, 2, function(x)
-            exp(median(
-                (log(x) - log_geomeans)[is.finite(log_geomeans) & x > 0]
-            ))
-        )
-        dispersionFunction(dds, estimateVar=FALSE) <- disp_func
+        dds <- estimateSizeFactors(dds, geoMeans=geo_means, quiet=TRUE)
+        suppressMessages(dispersionFunction(dds) <- disp_func)
     }
     vsd <- varianceStabilizingTransformation(dds, blind=blind, fitType=fit_type)
     return(list(
-        t(as.matrix(assay(vsd))), log_geomeans, sizeFactors(dds),
+        t(as.matrix(assay(vsd))), geo_means, sizeFactors(dds),
         dispersionFunction(dds)
     ))
 }
@@ -74,14 +70,14 @@ deseq2_vst_transform <- function(
 deseq2_feature_score <- function(X, y, blind=FALSE, fit_type="local") {
     suppressPackageStartupMessages(library("DESeq2"))
     counts <- t(X)
-    log_geomeans <- rowMeans(log(counts))
+    geo_means <- exp(rowMeans(log(counts)))
     dds <- DESeqDataSetFromMatrix(counts, data.frame(Class=factor(y)), ~Class)
     dds <- DESeq(dds, fitType=fit_type, quiet=TRUE)
     results <- as.data.frame(results(dds))
     results <- results[order(as.integer(row.names(results))), , drop=FALSE]
     vsd <- varianceStabilizingTransformation(dds, blind=blind, fitType=fit_type)
     return(list(
-        results$padj, t(as.matrix(assay(vsd))), log_geomeans, sizeFactors(dds),
+        results$padj, t(as.matrix(assay(vsd))), geo_means, sizeFactors(dds),
         dispersionFunction(dds)
     ))
 }
