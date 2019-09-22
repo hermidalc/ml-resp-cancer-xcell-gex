@@ -12,14 +12,17 @@ r_deseq2_vst_transform = robjects.globalenv['deseq2_vst_transform']
 r_edger_tmm_logcpm_transform = robjects.globalenv['edger_tmm_logcpm_transform']
 numpy2ri.activate()
 
-def deseq2_vst_transform(X, y, blind, fit_type):
-    xt, gm, sf, df = r_deseq2_vst_transform(X, y, blind=blind,
-                                            fit_type=fit_type)
+def deseq2_vst_transform(X, y, geo_means, size_factors, disp_func, blind,
+                         fit_type):
+    xt, gm, sf, df = r_deseq2_vst_transform(
+        X, y, geo_means=geo_means, size_factors=size_factors,
+        disp_func=disp_func, blind=blind, fit_type=fit_type)
     return (np.array(xt, dtype=float), np.array(gm, dtype=float),
             np.array(sf, dtype=float), df)
 
-def edger_tmm_logcpm_transform(X, prior_count):
-    xt, rs = r_edger_tmm_logcpm_transform(X, prior_count=prior_count)
+def edger_tmm_logcpm_transform(X, ref_sample, prior_count):
+    xt, rs = r_edger_tmm_logcpm_transform(X, ref_sample=ref_sample,
+                                          prior_count=prior_count)
     return np.array(xt, dtype=float), np.array(rs, dtype=float)
 
 
@@ -89,10 +92,11 @@ class DESeq2MRNVSTransformer(TransformerMixin, BaseEstimator):
         check_is_fitted(self, '_vst_data')
         X = check_array(X, dtype=None)
         if hasattr(self, '_train_done'):
-            X = np.array(r_deseq2_vst_transform(
+            memory = check_memory(self.memory)
+            X = memory.cache(deseq2_vst_transform)(
                 X, geo_means=self.geo_means_, size_factors=self.size_factors_,
                 disp_func=self.disp_func_, blind=self.blind,
-                fit_type=self.fit_type)[0], dtype=float)
+                fit_type=self.fit_type)[0]
         else:
             X = self._vst_data
             self._train_done = True
@@ -167,10 +171,10 @@ class EdgeRTMMLogCPMTransformer(TransformerMixin, BaseEstimator):
         check_is_fitted(self, '_log_cpms')
         X = check_array(X, dtype=None)
         if hasattr(self, '_train_done'):
-            X = np.array(r_edger_tmm_logcpm_transform(
+            memory = check_memory(self.memory)
+            X = memory.cache(edger_tmm_logcpm_transform)(
                 X, ref_sample=self.ref_sample_,
-                prior_count=self.prior_count)[0],
-                         dtype=float)
+                prior_count=self.prior_count)[0]
         else:
             X = self._log_cpms
             self._train_done = True
