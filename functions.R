@@ -73,7 +73,7 @@ deseq2_feature_score <- function(X, y, blind=FALSE, fit_type="local") {
     geo_means <- exp(rowMeans(log(counts)))
     dds <- DESeqDataSetFromMatrix(counts, data.frame(Class=factor(y)), ~Class)
     dds <- DESeq(dds, fitType=fit_type, quiet=TRUE)
-    results <- as.data.frame(results(dds))
+    results <- as.data.frame(results(dds, pAdjustMethod="BH"))
     results <- results[order(as.integer(row.names(results))), , drop=FALSE]
     vsd <- varianceStabilizingTransformation(dds, blind=blind, fitType=fit_type)
     return(list(
