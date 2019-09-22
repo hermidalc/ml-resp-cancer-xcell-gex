@@ -45,9 +45,10 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 sys.path.insert(1, sys.path[0] + '/lib/python3')
 from feature_selection import (
-    ANOVAFScorerClassification, CFS, Chi2Scorer, ColumnSelector,
+    ANOVAFScorerClassification, CFS, Chi2Scorer, ColumnSelector, DESeq2, EdgeR,
     EdgeRFilterByExpr, FCBF, LimmaScorerClassification, LimmaVoom,
     MutualInfoScorerClassification, ReliefF, RFE, SelectFromModel, SelectKBest)
+from preprocessing import DESeq2MRNVSTransformer, EdgeRTMMLogCPMTransformer
 
 def str_list(arg):
     return list(map(str, arg.split(',')))
