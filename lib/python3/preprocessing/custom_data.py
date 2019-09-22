@@ -1,12 +1,10 @@
 import numpy as np
-import six
-from joblib import Memory
 import rpy2.robjects as robjects
 from rpy2.robjects.packages import importr
 from rpy2.robjects import numpy2ri
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils import check_array, check_X_y
-from sklearn.utils.validation import check_is_fitted
+from sklearn.utils.validation import check_is_fitted, check_memory
 
 r_base = importr('base')
 r_base.source('functions.R')
@@ -69,17 +67,7 @@ class DESeq2MRNVSTransformer(TransformerMixin, BaseEstimator):
             regression).
         """
         X, y = check_X_y(X, y, dtype=None)
-        memory = self.memory
-        if memory is None:
-            memory = Memory(cachedir=None, verbose=0)
-        elif isinstance(memory, six.string_types):
-            memory = Memory(cachedir=memory, verbose=0)
-        elif not isinstance(memory, Memory):
-            raise ValueError(
-                "'memory' should either be a string or"
-                " a sklearn.externals.joblib.Memory"
-                " instance, got 'memory={!r}' instead."
-                .format(type(memory)))
+        memory = check_memory(self.memory)
         (self._vst_data, self.geo_means_, self.size_factors_,
          self.disp_func_) = (memory.cache(deseq2_vst_transform)(
                 X, y, blind=self.blind, fit_type=self.fit_type))
@@ -158,17 +146,7 @@ class EdgeRTMMLogCPMTransformer(TransformerMixin, BaseEstimator):
         y : ignored
         """
         X = check_array(X, dtype=None)
-        memory = self.memory
-        if memory is None:
-            memory = Memory(cachedir=None, verbose=0)
-        elif isinstance(memory, six.string_types):
-            memory = Memory(cachedir=memory, verbose=0)
-        elif not isinstance(memory, Memory):
-            raise ValueError(
-                "'memory' should either be a string or"
-                " a sklearn.externals.joblib.Memory"
-                " instance, got 'memory={!r}' instead."
-                .format(type(memory)))
+        memory = check_memory(self.memory)
         self._log_cpms, self.ref_sample_ = (
             memory.cache(edger_tmm_logcpm_transform)(
                 X, prior_count=self.prior_count))

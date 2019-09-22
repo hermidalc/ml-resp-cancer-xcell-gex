@@ -1,7 +1,5 @@
 import warnings
 import numpy as np
-import six
-from joblib import Memory
 import rpy2.robjects as robjects
 from rpy2.rinterface import RRuntimeWarning
 from rpy2.robjects.packages import importr
@@ -9,7 +7,7 @@ from rpy2.robjects import numpy2ri
 from sklearn.base import BaseEstimator
 from sklearn.feature_selection.base import SelectorMixin
 from sklearn.utils import check_array, check_X_y
-from sklearn.utils.validation import check_is_fitted
+from sklearn.utils.validation import check_is_fitted, check_memory
 from .univariate_selection import BaseScorer
 
 r_base = importr('base')
@@ -110,17 +108,7 @@ class DESeq2(BaseEstimator, SelectorMixin):
         """
         X, y = check_X_y(X, y, dtype=None)
         self._check_params(X, y)
-        memory = self.memory
-        if memory is None:
-            memory = Memory(cachedir=None, verbose=0)
-        elif isinstance(memory, six.string_types):
-            memory = Memory(cachedir=memory, verbose=0)
-        elif not isinstance(memory, Memory):
-            raise ValueError(
-                "'memory' should either be a string or"
-                " a sklearn.externals.joblib.Memory"
-                " instance, got 'memory={!r}' instead."
-                .format(type(memory)))
+        memory = check_memory(self.memory)
         (self.pvalues_, self._vst_data, self.geo_means_, self.size_factors_,
             self.disp_func_) = (memory.cache(deseq2_feature_score)(
                 X, y, blind=self.blind, fit_type=self.fit_type))
@@ -236,17 +224,7 @@ class EdgeR(BaseEstimator, SelectorMixin):
         """
         X, y = check_X_y(X, y, dtype=None)
         self._check_params(X, y)
-        memory = self.memory
-        if memory is None:
-            memory = Memory(cachedir=None, verbose=0)
-        elif isinstance(memory, six.string_types):
-            memory = Memory(cachedir=memory, verbose=0)
-        elif not isinstance(memory, Memory):
-            raise ValueError(
-                "'memory' should either be a string or"
-                " a sklearn.externals.joblib.Memory"
-                " instance, got 'memory={!r}' instead."
-                .format(type(memory)))
+        memory = check_memory(self.memory)
         self.scores_, self.pvalues_, self._log_cpms, self.ref_sample_ = (
             memory.cache(edger_feature_score)(
                 X, y, prior_count=self.prior_count))
@@ -393,17 +371,7 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
         """
         X, y = check_X_y(X, y, dtype=None)
         self._check_params(X, y)
-        memory = self.memory
-        if memory is None:
-            memory = Memory(cachedir=None, verbose=0)
-        elif isinstance(memory, six.string_types):
-            memory = Memory(cachedir=memory, verbose=0)
-        elif not isinstance(memory, Memory):
-            raise ValueError(
-                "'memory' should either be a string or"
-                " a sklearn.externals.joblib.Memory"
-                " instance, got 'memory={!r}' instead."
-                .format(type(memory)))
+        memory = check_memory(self.memory)
         self.scores_, self.pvalues_, self._log_cpms, self.ref_sample_ = (
             memory.cache(limma_voom_feature_score)(
                 X, y, prior_count=self.prior_count))
@@ -669,17 +637,7 @@ class FCBF(BaseEstimator, SelectorMixin):
         """
         X, y = check_X_y(X, y, dtype=None)
         self._check_params(X, y)
-        memory = self.memory
-        if memory is None:
-            memory = Memory(cachedir=None, verbose=0)
-        elif isinstance(memory, six.string_types):
-            memory = Memory(cachedir=memory, verbose=0)
-        elif not isinstance(memory, Memory):
-            raise ValueError(
-                "'memory' should either be a string or"
-                " a sklearn.externals.joblib.Memory"
-                " instance, got 'memory={!r}' instead."
-                .format(type(memory)))
+        memory = check_memory(self.memory)
         self._n_features = X.shape[1]
         if self.k == 'all' or self.k > 0:
             warnings.filterwarnings('ignore', category=RRuntimeWarning,
@@ -759,17 +717,7 @@ class ReliefF(BaseEstimator, SelectorMixin):
         """
         X, y = check_X_y(X, y, dtype=None)
         self._check_params(X, y)
-        memory = self.memory
-        if memory is None:
-            memory = Memory(cachedir=None, verbose=0)
-        elif isinstance(memory, six.string_types):
-            memory = Memory(cachedir=memory, verbose=0)
-        elif not isinstance(memory, Memory):
-            raise ValueError(
-                "'memory' should either be a string or"
-                " a sklearn.externals.joblib.Memory"
-                " instance, got 'memory={!r}' instead."
-                .format(type(memory)))
+        memory = check_memory(self.memory)
         warnings.filterwarnings('ignore', category=RRuntimeWarning,
                                 message="^Rjava\.init\.warning")
         self.scores_ = memory.cache(relieff_feature_score)(X, y)
