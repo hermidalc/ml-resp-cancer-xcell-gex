@@ -43,11 +43,11 @@ class DESeq2MRNVSTransformer(TransformerMixin, BaseEstimator):
 
     Attributes
     ----------
-    size_factors_ : array, shape (n_features,)
-        DESeq2 normalization size factors
-
     geo_means_ : array, shape (n_features,)
         Feature geometric means.
+
+    size_factors_ : array, shape (n_features,)
+        DESeq2 normalization size factors
 
     disp_func_ : R/rpy2 function
         DESeq2 normalization dispersion function
