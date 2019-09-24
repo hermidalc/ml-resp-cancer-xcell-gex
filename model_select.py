@@ -950,6 +950,7 @@ pipelines = {
         },
         'DESeq2': {
             'steps': [
+                ('fs1', EdgeRFilterByExpr()),
                 ('fs2', DESeq2(memory=memory)),
             ],
             'param_grid': [
@@ -960,6 +961,7 @@ pipelines = {
         },
         'EdgeR': {
             'steps': [
+                ('fs1', EdgeRFilterByExpr()),
                 ('fs2', EdgeR(memory=memory)),
             ],
             'param_grid': [
@@ -970,6 +972,7 @@ pipelines = {
         },
         'LimmaVoom': {
             'steps': [
+                ('fs1', EdgeRFilterByExpr()),
                 ('fs2', LimmaVoom(memory=memory)),
             ],
             'param_grid': [
@@ -1700,7 +1703,7 @@ if args.analysis == 1:
         feature_ranks = feature_mean_roc_aucs
     elif args.fs_rank_meth == 'mean_bcrs':
         feature_ranks = feature_mean_bcrs
-    if args.verbose > 1:
+    if args.verbose > 0:
         print('Overall Feature Rankings:')
         for rank, feature in sorted(zip(feature_ranks, feature_names), reverse=True):
             print(feature, '\t', rank)
@@ -1870,7 +1873,7 @@ elif args.analysis == 2:
             weights = search.best_estimator_.named_steps['fs2'].feature_importances_
     print('Train:', dataset_tr_name, ' ROC AUC (CV): %.4f  BCR (CV): %.4f' % (
         search.cv_results_['mean_test_roc_auc'][search.best_index_],
-        search.cv_results_['mean_test_bcr'][search.best_index_]
+        search.cv_results_['mean_test_balanced_accuracy'][search.best_index_]
     ))
     print('Best Params:', search.best_params_)
     if weights.size > 0:
@@ -2414,7 +2417,7 @@ elif args.analysis == 3:
                         ['slr'][slr_idx][metric_te]) = metric_score_te
             best_grid_idx_te = np.argmin(search.cv_results_['rank_test_' + args.scv_refit])
             best_roc_auc_te = search.cv_results_['mean_test_roc_auc'][best_grid_idx_te]
-            best_bcr_te = search.cv_results_['mean_test_bcr'][best_grid_idx_te]
+            best_bcr_te = search.cv_results_['mean_test_balanced_accuracy'][best_grid_idx_te]
             best_params_te = search.cv_results_['params'][best_grid_idx_te]
             print('Best Params (Test):', best_params_te)
             print('ROC AUC (Test): %.4f' % best_roc_auc_te, ' BCR (Test): %.4f' % best_bcr_te)
@@ -3040,7 +3043,7 @@ elif args.analysis == 4:
                         best_params_te = group_best_params[group_idx]
                 best_grid_idx_cv = np.argmin(search.cv_results_['rank_test_' + args.scv_refit])
                 best_roc_auc_cv = search.cv_results_['mean_test_roc_auc'][best_grid_idx_cv]
-                best_bcr_cv = search.cv_results_['mean_test_bcr'][best_grid_idx_cv]
+                best_bcr_cv = search.cv_results_['mean_test_balanced_accuracy'][best_grid_idx_cv]
                 best_params_cv = search.cv_results_['params'][best_grid_idx_cv]
                 print('Best Params (Train):', best_params_cv)
                 print('Best Params (Test):', best_params_te)
