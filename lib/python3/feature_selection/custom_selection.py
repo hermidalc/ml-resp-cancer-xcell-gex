@@ -43,13 +43,15 @@ def edger_tmm_logcpm_transform(X, ref_sample, prior_count):
                                           prior_count=prior_count)
     return np.array(xt, dtype=float), np.array(rs, dtype=float)
 
-def edger_feature_score(X, y, prior_count):
-    f, pv, xt, rs = r_edger_feature_score(X, y, prior_count=prior_count)
+def edger_feature_score(X, y, robust, prior_count):
+    f, pv, xt, rs = r_edger_feature_score(X, y, robust=robust,
+                                          prior_count=prior_count)
     return (np.array(f, dtype=float), np.array(pv, dtype=float),
             np.array(xt, dtype=float), np.array(rs, dtype=float))
 
-def limma_voom_feature_score(X, y, prior_count):
-    f, pv, xt, rs = r_limma_voom_feature_score(X, y, prior_count=prior_count)
+def limma_voom_feature_score(X, y, robust, prior_count):
+    f, pv, xt, rs = r_limma_voom_feature_score(X, y, robust=robust,
+                                               prior_count=prior_count)
     return (np.array(f, dtype=float), np.array(pv, dtype=float),
             np.array(xt, dtype=float), np.array(rs, dtype=float))
 
@@ -194,6 +196,9 @@ class EdgeR(BaseEstimator, SelectorMixin):
         Number of top features to select. The "all" option bypasses selection,
         for use in a parameter search.
 
+    robust : bool (default = False)
+        estimateDisp and glmQLFit robust option
+
     prior_count : int (default = 1)
         Average count to add to each observation to avoid taking log of zero.
         Larger values for produce stronger moderation of the values for low
@@ -215,8 +220,9 @@ class EdgeR(BaseEstimator, SelectorMixin):
     ref_sample_ : array, shape (n_features,)
         edgeR TMM normalization reference sample feature vector.
     """
-    def __init__(self, k='all', prior_count=1, memory=None):
+    def __init__(self, k='all', robust=False, prior_count=1, memory=None):
         self.k = k
+        self.robust = robust
         self.prior_count = prior_count
         self.memory = memory
 
@@ -241,7 +247,7 @@ class EdgeR(BaseEstimator, SelectorMixin):
         memory = check_memory(self.memory)
         self.scores_, self.pvalues_, self._log_cpms, self.ref_sample_ = (
             memory.cache(edger_feature_score)(
-                X, y, prior_count=self.prior_count))
+                X, y, robust=self.robust, prior_count=self.prior_count))
         return self
 
     def transform(self, X):
@@ -341,6 +347,9 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
         Number of top features to select. The "all" option bypasses selection,
         for use in a parameter search.
 
+    robust : bool (default = False)
+        limma eBayes robust option
+
     prior_count : int (default = 1)
         Average count to add to each observation to avoid taking log of zero.
         Larger values for produce stronger moderation of the values for low
@@ -362,8 +371,9 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
     ref_sample_ : array, shape (n_features,)
         edgeR TMM normalization reference sample feature vector.
     """
-    def __init__(self, k='all', prior_count=1, memory=None):
+    def __init__(self, k='all', robust=False, prior_count=1, memory=None):
         self.k = k
+        self.robust = robust
         self.prior_count = prior_count
         self.memory = memory
 
@@ -388,7 +398,7 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
         memory = check_memory(self.memory)
         self.scores_, self.pvalues_, self._log_cpms, self.ref_sample_ = (
             memory.cache(limma_voom_feature_score)(
-                X, y, prior_count=self.prior_count))
+                X, y, robust=self.robust, prior_count=self.prior_count))
         return self
 
     def transform(self, X):
@@ -454,10 +464,10 @@ class LimmaScorerClassification(BaseScorer):
     Parameters
     ----------
     robust : bool (default = False)
-        limma eBayes robust
+        limma eBayes robust option
 
     trend : bool (default = False)
-        limma eBayes trend
+        limma eBayes trend option
 
     Attributes
     ----------
