@@ -74,7 +74,9 @@ norm_methods <- c(
     "counts",
     "fpkm",
     "rpkm",
-    "tpm"
+    "tmm",
+    "tpm",
+    "vst"
 )
 feat_types <- c(
     "none",
@@ -112,7 +114,6 @@ filt_types <- c(
     "impres",
     "ipres",
     "kdm5a",
-    "kdm5a2",
     "kdm5a_cyt",
     "kdm5a_cyt_tmb",
     "kdm5a_tmb",

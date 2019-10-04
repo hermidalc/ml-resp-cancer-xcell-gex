@@ -30,7 +30,7 @@ def edger_tmm_logcpm_transform(X, ref_sample, prior_count):
     return np.array(xt, dtype=float), np.array(rs, dtype=float)
 
 
-class DESeq2MRNVSTransformer(TransformerMixin, BaseEstimator):
+class DESeq2RLEVSTransformer(TransformerMixin, BaseEstimator):
     """DESeq2 median-of-ratios normalization and VST transformation
 
     Parameters

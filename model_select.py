@@ -48,7 +48,7 @@ from feature_selection import (
     ANOVAFScorerClassification, CFS, Chi2Scorer, ColumnSelector, DESeq2, EdgeR,
     EdgeRFilterByExpr, FCBF, LimmaScorerClassification, LimmaVoom,
     MutualInfoScorerClassification, ReliefF, RFE, SelectFromModel, SelectKBest)
-from preprocessing import DESeq2MRNVSTransformer, EdgeRTMMLogCPMTransformer
+from preprocessing import DESeq2RLEVSTransformer, EdgeRTMMLogCPMTransformer
 
 def str_list(arg):
     return list(map(str, arg.split(',')))
