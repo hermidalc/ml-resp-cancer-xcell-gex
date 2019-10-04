@@ -125,7 +125,7 @@ class DESeq2(BaseEstimator, SelectorMixin):
         self : object
             Returns self.
         """
-        X, y = check_X_y(X, y, dtype=None)
+        X, y = check_X_y(X, y, dtype=np.int64)
         self._check_params(X, y)
         memory = check_memory(self.memory)
         (self.pvalues_, self._vst_data, self.geo_means_, self.size_factors_,
@@ -147,7 +147,7 @@ class DESeq2(BaseEstimator, SelectorMixin):
             matrix with only the selected features.
         """
         check_is_fitted(self, '_vst_data')
-        X = check_array(X, dtype=None)
+        X = check_array(X, dtype=np.int64)
         if hasattr(self, '_train_done'):
             memory = check_memory(self.memory)
             X = memory.cache(deseq2_vst_transform)(
@@ -246,7 +246,7 @@ class EdgeR(BaseEstimator, SelectorMixin):
         self : object
             Returns self.
         """
-        X, y = check_X_y(X, y, dtype=None)
+        X, y = check_X_y(X, y, dtype=np.int64)
         self._check_params(X, y)
         memory = check_memory(self.memory)
         self.scores_, self.pvalues_, self._log_cpms, self.ref_sample_ = (
@@ -268,7 +268,7 @@ class EdgeR(BaseEstimator, SelectorMixin):
             only the selected features.
         """
         check_is_fitted(self, '_log_cpms')
-        X = check_array(X, dtype=None)
+        X = check_array(X, dtype=np.int64)
         if hasattr(self, '_train_done'):
             memory = check_memory(self.memory)
             X = memory.cache(edger_tmm_logcpm_transform)(
@@ -333,7 +333,7 @@ class EdgeRFilterByExpr(BaseEstimator, SelectorMixin):
         self : object
             Returns self.
         """
-        X, y = check_X_y(X, y, dtype=None)
+        X, y = check_X_y(X, y, dtype=np.int64)
         self._mask = np.array(r_edger_filterbyexpr_mask(X, y), dtype=bool)
         return self
 
@@ -397,7 +397,7 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
         self : object
             Returns self.
         """
-        X, y = check_X_y(X, y, dtype=None)
+        X, y = check_X_y(X, y, dtype=np.int64)
         self._check_params(X, y)
         memory = check_memory(self.memory)
         self.scores_, self.pvalues_, self._log_cpms, self.ref_sample_ = (
@@ -419,7 +419,7 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
             only the selected features.
         """
         check_is_fitted(self, '_log_cpms')
-        X = check_array(X, dtype=None)
+        X = check_array(X, dtype=np.int64)
         if hasattr(self, '_train_done'):
             memory = check_memory(self.memory)
             X = memory.cache(edger_tmm_logcpm_transform)(

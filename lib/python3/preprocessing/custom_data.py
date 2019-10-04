@@ -73,7 +73,7 @@ class DESeq2RLEVSTransformer(TransformerMixin, BaseEstimator):
             The target values (class labels in classification, real numbers in
             regression).
         """
-        X, y = check_X_y(X, y, dtype=None)
+        X, y = check_X_y(X, y, dtype=np.int64)
         memory = check_memory(self.memory)
         (self._vst_data, self.geo_means_, self.size_factors_,
          self.disp_func_) = (memory.cache(deseq2_vst_transform)(
@@ -94,7 +94,7 @@ class DESeq2RLEVSTransformer(TransformerMixin, BaseEstimator):
             matrix.
         """
         check_is_fitted(self, '_vst_data')
-        X = check_array(X, dtype=None)
+        X = check_array(X, dtype=np.int64)
         if hasattr(self, '_train_done'):
             memory = check_memory(self.memory)
             X = memory.cache(deseq2_vst_transform)(
@@ -153,7 +153,7 @@ class EdgeRTMMLogCPMTransformer(TransformerMixin, BaseEstimator):
 
         y : ignored
         """
-        X = check_array(X, dtype=None)
+        X = check_array(X, dtype=np.int64)
         memory = check_memory(self.memory)
         self._log_cpms, self.ref_sample_ = (
             memory.cache(edger_tmm_logcpm_transform)(
@@ -173,7 +173,7 @@ class EdgeRTMMLogCPMTransformer(TransformerMixin, BaseEstimator):
             edgeR TMM normalized log-CPM transformed input data matrix.
         """
         check_is_fitted(self, '_log_cpms')
-        X = check_array(X, dtype=None)
+        X = check_array(X, dtype=np.int64)
         if hasattr(self, '_train_done'):
             memory = check_memory(self.memory)
             X = memory.cache(edger_tmm_logcpm_transform)(
