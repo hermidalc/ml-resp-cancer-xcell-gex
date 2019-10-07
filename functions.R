@@ -117,7 +117,7 @@ edger_tmm_logcpm_transform <- function(X, ref_sample=NULL, prior_count=1) {
     return(list(t(log_cpm), ref_sample))
 }
 
-edger_feature_score <- function(X, y, robust=FALSE, prior_count=1) {
+edger_feature_score <- function(X, y, robust=TRUE, prior_count=1) {
     suppressPackageStartupMessages(library("edgeR"))
     counts <- t(X)
     dge <- DGEList(counts=counts, group=y)
@@ -135,7 +135,7 @@ edger_feature_score <- function(X, y, robust=FALSE, prior_count=1) {
     return(list(results$F, results$FDR, t(log_cpm), ref_sample))
 }
 
-limma_voom_feature_score <- function(X, y, robust=FALSE, prior_count=1) {
+limma_voom_feature_score <- function(X, y, robust=TRUE, prior_count=1) {
     suppressPackageStartupMessages(library("edgeR"))
     suppressPackageStartupMessages(library("limma"))
     counts <- t(X)

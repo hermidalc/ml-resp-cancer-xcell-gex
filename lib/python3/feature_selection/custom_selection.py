@@ -200,7 +200,7 @@ class EdgeR(BaseEstimator, SelectorMixin):
         Number of top features to select. The "all" option bypasses selection,
         for use in a parameter search.
 
-    robust : bool (default = False)
+    robust : bool (default = True)
         estimateDisp and glmQLFit robust option
 
     prior_count : int (default = 1)
@@ -224,7 +224,7 @@ class EdgeR(BaseEstimator, SelectorMixin):
     ref_sample_ : array, shape (n_features,)
         edgeR TMM normalization reference sample feature vector.
     """
-    def __init__(self, k='all', robust=False, prior_count=1, memory=None):
+    def __init__(self, k='all', robust=True, prior_count=1, memory=None):
         self.k = k
         self.robust = robust
         self.prior_count = prior_count
@@ -351,7 +351,7 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
         Number of top features to select. The "all" option bypasses selection,
         for use in a parameter search.
 
-    robust : bool (default = False)
+    robust : bool (default = True)
         limma eBayes robust option
 
     prior_count : int (default = 1)
@@ -375,7 +375,7 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
     ref_sample_ : array, shape (n_features,)
         edgeR TMM normalization reference sample feature vector.
     """
-    def __init__(self, k='all', robust=False, prior_count=1, memory=None):
+    def __init__(self, k='all', robust=True, prior_count=1, memory=None):
         self.k = k
         self.robust = robust
         self.prior_count = prior_count
