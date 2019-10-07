@@ -37,26 +37,27 @@ def deseq2_vst_transform(X, y, geo_means, size_factors, disp_func, blind,
             np.array(sf, dtype=float), df)
 
 def deseq2_feature_score(X, y, blind, fit_type):
-    pv, xt, gm, sf, df = r_deseq2_feature_score(X, y, blind=blind,
-                                                fit_type=fit_type)
-    return (np.array(pv, dtype=float), np.array(xt, dtype=float),
-            np.array(gm, dtype=float), np.array(sf, dtype=float), df)
+    pv, pa, xt, gm, sf, df = r_deseq2_feature_score(X, y, blind=blind,
+                                                    fit_type=fit_type)
+    return (np.array(pv, dtype=float), np.array(pa, dtype=float),
+            np.array(xt, dtype=float), np.array(gm, dtype=float),
+            np.array(sf, dtype=float), df)
 
 def edger_tmm_logcpm_transform(X, ref_sample, prior_count):
     xt, rs = r_edger_tmm_logcpm_transform(X, ref_sample=ref_sample,
                                           prior_count=prior_count)
     return np.array(xt, dtype=float), np.array(rs, dtype=float)
 
-def edger_feature_score(X, y, robust, prior_count):
-    f, pv, xt, rs = r_edger_feature_score(X, y, robust=robust,
-                                          prior_count=prior_count)
-    return (np.array(f, dtype=float), np.array(pv, dtype=float),
+def edger_feature_score(X, y, lfc, robust, prior_count):
+    pv, pa, xt, rs = r_edger_feature_score(X, y, lfc=lfc, robust=robust,
+                                           prior_count=prior_count)
+    return (np.array(pv, dtype=float), np.array(pa, dtype=float),
             np.array(xt, dtype=float), np.array(rs, dtype=float))
 
-def limma_voom_feature_score(X, y, robust, prior_count):
-    f, pv, xt, rs = r_limma_voom_feature_score(X, y, robust=robust,
-                                               prior_count=prior_count)
-    return (np.array(f, dtype=float), np.array(pv, dtype=float),
+def limma_voom_feature_score(X, y, lfc, robust, prior_count):
+    pv, pa, xt, rs = r_limma_voom_feature_score(X, y, lfc=lfc, robust=robust,
+                                                prior_count=prior_count)
+    return (np.array(pv, dtype=float), np.array(pa, dtype=float),
             np.array(xt, dtype=float), np.array(rs, dtype=float))
 
 def fcbf_feature_idxs(X, y, threshold):
@@ -91,8 +92,11 @@ class DESeq2(BaseEstimator, SelectorMixin):
 
     Attributes
     ----------
-    pvalues_ : array, shape (n_features,)
-        Feature FDR-adjusted p-values.
+    pvals_ : array, shape (n_features,)
+        Feature raw p-values.
+
+    padjs_ : array, shape (n_features,)
+        Feature adjusted p-values.
 
     geo_means_ : array, shape (n_features,)
         Feature geometric means.
@@ -128,9 +132,10 @@ class DESeq2(BaseEstimator, SelectorMixin):
         X, y = check_X_y(X, y, dtype=np.int64)
         self._check_params(X, y)
         memory = check_memory(self.memory)
-        (self.pvalues_, self._vst_data, self.geo_means_, self.size_factors_,
-            self.disp_func_) = (memory.cache(deseq2_feature_score)(
-                X, y, blind=self.blind, fit_type=self.fit_type))
+        (self.pvals_, self.padjs_, self._vst_data, self.geo_means_,
+         self.size_factors_, self.disp_func_) = (
+             memory.cache(deseq2_feature_score)(
+                 X, y, blind=self.blind, fit_type=self.fit_type))
         return self
 
     def transform(self, X):
@@ -182,12 +187,12 @@ class DESeq2(BaseEstimator, SelectorMixin):
                 % self.k)
 
     def _get_support_mask(self):
-        check_is_fitted(self, 'pvalues_')
-        mask = np.zeros_like(self.pvalues_, dtype=bool)
+        check_is_fitted(self, 'pvals_')
+        mask = np.zeros_like(self.pvals_, dtype=bool)
         if self.k == 'all':
-            mask = np.ones_like(self.pvalues_, dtype=bool)
+            mask = np.ones_like(self.pvals_, dtype=bool)
         elif self.k > 0:
-            mask[np.argsort(self.pvalues_, kind='mergesort')[:self.k]] = True
+            mask[np.argsort(self.pvals_, kind='mergesort')[:self.k]] = True
         return mask
 
 
@@ -199,6 +204,10 @@ class EdgeR(BaseEstimator, SelectorMixin):
     k : int or "all" (default = "all")
         Number of top features to select. The "all" option bypasses selection,
         for use in a parameter search.
+
+    lfc : float (default = 0)
+        glmTreat absolute log fold-change minimum threshold.  Default value
+        of 0 gives glmQLFTest results.
 
     robust : bool (default = True)
         estimateDisp and glmQLFit robust option
@@ -215,17 +224,19 @@ class EdgeR(BaseEstimator, SelectorMixin):
 
     Attributes
     ----------
-    scores_ : array, shape (n_features,)
-        Feature F values.
+    pvals_ : array, shape (n_features,)
+        Feature raw p-values.
 
-    pvalues_ : array, shape (n_features,)
-        Feature FDR-adjusted p-values.
+    padjs_ : array, shape (n_features,)
+        Feature adjusted p-values.
 
     ref_sample_ : array, shape (n_features,)
         edgeR TMM normalization reference sample feature vector.
     """
-    def __init__(self, k='all', robust=True, prior_count=1, memory=None):
+    def __init__(self, k='all', lfc=0, robust=True, prior_count=1,
+                 memory=None):
         self.k = k
+        self.lfc = lfc
         self.robust = robust
         self.prior_count = prior_count
         self.memory = memory
@@ -249,9 +260,10 @@ class EdgeR(BaseEstimator, SelectorMixin):
         X, y = check_X_y(X, y, dtype=np.int64)
         self._check_params(X, y)
         memory = check_memory(self.memory)
-        self.scores_, self.pvalues_, self._log_cpms, self.ref_sample_ = (
+        self.pvals_, self.padjs_, self._log_cpms, self.ref_sample_ = (
             memory.cache(edger_feature_score)(
-                X, y, robust=self.robust, prior_count=self.prior_count))
+                X, y, lfc=self.lfc, robust=self.robust,
+                prior_count=self.prior_count))
         return self
 
     def transform(self, X):
@@ -302,12 +314,12 @@ class EdgeR(BaseEstimator, SelectorMixin):
                 % self.k)
 
     def _get_support_mask(self):
-        check_is_fitted(self, 'scores_')
-        mask = np.zeros_like(self.scores_, dtype=bool)
+        check_is_fitted(self, 'pvals_')
+        mask = np.zeros_like(self.pvals_, dtype=bool)
         if self.k == 'all':
-            mask = np.ones_like(self.scores_, dtype=bool)
+            mask = np.ones_like(self.pvals_, dtype=bool)
         elif self.k > 0:
-            mask[np.argsort(self.scores_, kind='mergesort')[-self.k:]] = True
+            mask[np.argsort(self.pvals_, kind='mergesort')[:self.k]] = True
         return mask
 
 
@@ -351,8 +363,12 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
         Number of top features to select. The "all" option bypasses selection,
         for use in a parameter search.
 
+    lfc : float (default = 0)
+        limma treat absolute log fold-change minimum threshold.  Default value
+        of 0 gives eBayes results.
+
     robust : bool (default = True)
-        limma eBayes robust option
+        limma treat/eBayes robust option
 
     prior_count : int (default = 1)
         Average count to add to each observation to avoid taking log of zero.
@@ -366,17 +382,19 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
 
     Attributes
     ----------
-    scores_ : array, shape (n_features,)
-        Feature F values.
+    pvals_ : array, shape (n_features,)
+        Feature raw p-values.
 
-    pvalues_ : array, shape (n_features,)
-        Feature FDR-adjusted p-values.
+    padjs_ : array, shape (n_features,)
+        Feature adjusted p-values.
 
     ref_sample_ : array, shape (n_features,)
         edgeR TMM normalization reference sample feature vector.
     """
-    def __init__(self, k='all', robust=True, prior_count=1, memory=None):
+    def __init__(self, k='all', lfc=0, robust=True, prior_count=1,
+                 memory=None):
         self.k = k
+        self.lfc = lfc
         self.robust = robust
         self.prior_count = prior_count
         self.memory = memory
@@ -400,9 +418,10 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
         X, y = check_X_y(X, y, dtype=np.int64)
         self._check_params(X, y)
         memory = check_memory(self.memory)
-        self.scores_, self.pvalues_, self._log_cpms, self.ref_sample_ = (
+        self.pvals_, self.padjs_, self._log_cpms, self.ref_sample_ = (
             memory.cache(limma_voom_feature_score)(
-                X, y, robust=self.robust, prior_count=self.prior_count))
+                X, y, lfc=self.lfc, robust=self.robust,
+                prior_count=self.prior_count))
         return self
 
     def transform(self, X):
@@ -453,12 +472,12 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
                 % self.k)
 
     def _get_support_mask(self):
-        check_is_fitted(self, 'scores_')
-        mask = np.zeros_like(self.scores_, dtype=bool)
+        check_is_fitted(self, 'pvals_')
+        mask = np.zeros_like(self.pvals_, dtype=bool)
         if self.k == 'all':
-            mask = np.ones_like(self.scores_, dtype=bool)
+            mask = np.ones_like(self.pvals_, dtype=bool)
         elif self.k > 0:
-            mask[np.argsort(self.scores_, kind='mergesort')[-self.k:]] = True
+            mask[np.argsort(self.pvals_, kind='mergesort')[:self.k]] = True
         return mask
 
 
@@ -479,7 +498,7 @@ class LimmaScorerClassification(BaseScorer):
         Feature F values.
 
     pvalues_ : array, shape (n_features,)
-        Feature FDR-adjusted p-values.
+        Feature adjusted p-values.
     """
     def __init__(self, robust=False, trend=False):
         self.robust = robust

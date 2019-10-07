@@ -77,8 +77,8 @@ deseq2_feature_score <- function(X, y, blind=FALSE, fit_type="local") {
     results <- results[order(as.integer(row.names(results))), , drop=FALSE]
     vsd <- varianceStabilizingTransformation(dds, blind=blind, fitType=fit_type)
     return(list(
-        results$padj, t(as.matrix(assay(vsd))), geo_means, sizeFactors(dds),
-        dispersionFunction(dds)
+        results$pvalue, results$padj, t(as.matrix(assay(vsd))), geo_means,
+        sizeFactors(dds), dispersionFunction(dds)
     ))
 }
 
@@ -117,7 +117,7 @@ edger_tmm_logcpm_transform <- function(X, ref_sample=NULL, prior_count=1) {
     return(list(t(log_cpm), ref_sample))
 }
 
-edger_feature_score <- function(X, y, robust=TRUE, prior_count=1) {
+edger_feature_score <- function(X, y, lfc=0, robust=TRUE, prior_count=1) {
     suppressPackageStartupMessages(library("edgeR"))
     counts <- t(X)
     dge <- DGEList(counts=counts, group=y)
@@ -125,35 +125,31 @@ edger_feature_score <- function(X, y, robust=TRUE, prior_count=1) {
     design <- model.matrix(~factor(y))
     dge <- estimateDisp(dge, design, robust=robust)
     fit <- glmQLFit(dge, design, robust=robust)
-    qlf <- glmQLFTest(fit, coef=ncol(design))
+    suppressMessages(tr <- glmTreat(fit, coef=ncol(design), lfc=lfc))
     results <- as.data.frame(topTags(
-        qlf, n=Inf, adjust.method="BH", sort.by="none"
+        tr, n=Inf, adjust.method="BH", sort.by="none"
     ))
     results <- results[order(as.integer(row.names(results))), , drop=FALSE]
     log_cpm <- cpm(dge, log=TRUE, prior.count=prior_count)
     ref_sample <- counts[, edger_tmm_ref_column(counts)]
-    return(list(results$F, results$FDR, t(log_cpm), ref_sample))
+    return(list(results$PValue, results$FDR, t(log_cpm), ref_sample))
 }
 
-limma_voom_feature_score <- function(X, y, robust=TRUE, prior_count=1) {
+limma_voom_feature_score <- function(X, y, lfc=0, robust=TRUE, prior_count=1) {
     suppressPackageStartupMessages(library("edgeR"))
     suppressPackageStartupMessages(library("limma"))
     counts <- t(X)
     dge <- DGEList(counts=counts, group=y)
     dge <- calcNormFactors(dge, method="TMM")
-    design <- model.matrix(~0 + factor(y))
-    colnames(design) <- c("Class0", "Class1")
+    design <- model.matrix(~factor(y))
     v <- voom(dge, design)
     fit <- lmFit(v, design)
-    fit <- contrasts.fit(fit, makeContrasts(
-        Class1VsClass0=Class1-Class0, levels=design
-    ))
-    fit <- eBayes(fit, robust=robust)
-    results <- topTableF(fit, number=Inf, adjust.method="BH", sort.by="none")
+    fit <- treat(fit, lfc=lfc, robust=robust)
+    results <- topTreat(fit, number=Inf, adjust.method="BH", sort.by="none")
     results <- results[order(as.integer(row.names(results))), , drop=FALSE]
     log_cpm <- cpm(dge, log=TRUE, prior.count=prior_count)
     ref_sample <- counts[, edger_tmm_ref_column(counts)]
-    return(list(results$F, results$adj.P.Val, t(log_cpm), ref_sample))
+    return(list(results$P.Value, results$adj.P.Val, t(log_cpm), ref_sample))
 }
 
 limma_feature_score <- function(X, y, robust=FALSE, trend=FALSE) {
