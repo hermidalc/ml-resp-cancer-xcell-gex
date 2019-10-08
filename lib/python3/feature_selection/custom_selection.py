@@ -36,8 +36,8 @@ def deseq2_vst_transform(X, y, geo_means, size_factors, disp_func, blind,
     return (np.array(xt, dtype=float), np.array(gm, dtype=float),
             np.array(sf, dtype=float), df)
 
-def deseq2_feature_score(X, y, blind, fit_type):
-    pv, pa, xt, gm, sf, df = r_deseq2_feature_score(X, y, blind=blind,
+def deseq2_feature_score(X, y, lfc, blind, fit_type):
+    pv, pa, xt, gm, sf, df = r_deseq2_feature_score(X, y, lfc=lfc, blind=blind,
                                                     fit_type=fit_type)
     return (np.array(pv, dtype=float), np.array(pa, dtype=float),
             np.array(xt, dtype=float), np.array(gm, dtype=float),
@@ -79,11 +79,14 @@ class DESeq2(BaseEstimator, SelectorMixin):
         Number of top features to select. The "all" option bypasses selection,
         for use in a parameter search.
 
+    lfc : float (default = 0)
+        lfcThreshold absolute log fold-change minimum threshold.
+
     blind : bool (default = False)
-        DESeq2 varianceStabilizingTransformation() blind option
+        varianceStabilizingTransformation() blind option
 
     fit_type : str (default = local)
-        DESeq2 estimateDispersions() fitType option
+        estimateDispersions() fitType option
 
     memory : None, str or object with the joblib.Memory interface \
         (default = None)
@@ -102,13 +105,15 @@ class DESeq2(BaseEstimator, SelectorMixin):
         Feature geometric means.
 
     size_factors_ : array, shape (n_features,)
-        DESeq2 normalization size factors
+        RLE normalization size factors.
 
     disp_func_ : R/rpy2 function
-        DESeq2 normalization dispersion function
+        RLE normalization dispersion function.
     """
-    def __init__(self, k='all', blind=False, fit_type='local', memory=None):
+    def __init__(self, k='all', lfc=0, blind=False, fit_type='local',
+                 memory=None):
         self.k = k
+        self.lfc = lfc
         self.blind = blind
         self.fit_type = fit_type
         self.memory = memory
@@ -135,7 +140,7 @@ class DESeq2(BaseEstimator, SelectorMixin):
         (self.pvals_, self.padjs_, self._vst_data, self.geo_means_,
          self.size_factors_, self.disp_func_) = (
              memory.cache(deseq2_feature_score)(
-                 X, y, blind=self.blind, fit_type=self.fit_type))
+                 X, y, lfc=self.lfc, blind=self.blind, fit_type=self.fit_type))
         return self
 
     def transform(self, X):
@@ -231,7 +236,7 @@ class EdgeR(BaseEstimator, SelectorMixin):
         Feature adjusted p-values.
 
     ref_sample_ : array, shape (n_features,)
-        edgeR TMM normalization reference sample feature vector.
+        TMM normalization reference sample feature vector.
     """
     def __init__(self, k='all', lfc=0, robust=True, prior_count=1,
                  memory=None):
@@ -364,7 +369,7 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
         for use in a parameter search.
 
     lfc : float (default = 0)
-        limma treat absolute log fold-change minimum threshold.  Default value
+        treat absolute log fold-change minimum threshold.  Default value
         of 0 gives eBayes results.
 
     robust : bool (default = True)
@@ -389,7 +394,7 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
         Feature adjusted p-values.
 
     ref_sample_ : array, shape (n_features,)
-        edgeR TMM normalization reference sample feature vector.
+        TMM normalization reference sample feature vector.
     """
     def __init__(self, k='all', lfc=0, robust=True, prior_count=1,
                  memory=None):

@@ -36,10 +36,10 @@ class DESeq2RLEVSTransformer(TransformerMixin, BaseEstimator):
     Parameters
     ----------
     blind : bool (default = False)
-        DESeq2 varianceStabilizingTransformation() blind option
+        varianceStabilizingTransformation() blind option
 
     fit_type : str (default = local)
-        DESeq2 estimateDispersions() fitType option
+        estimateDispersions() fitType option
 
     memory : None, str or object with the joblib.Memory interface \
         (default = None)
@@ -52,10 +52,10 @@ class DESeq2RLEVSTransformer(TransformerMixin, BaseEstimator):
         Feature geometric means.
 
     size_factors_ : array, shape (n_features,)
-        DESeq2 normalization size factors
+        RLE normalization size factors.
 
     disp_func_ : R/rpy2 function
-        DESeq2 normalization dispersion function
+        RLE normalization dispersion function.
     """
     def __init__(self, blind=False, fit_type='local', memory=None):
         self.blind = blind
@@ -138,7 +138,7 @@ class EdgeRTMMLogCPMTransformer(TransformerMixin, BaseEstimator):
     Attributes
     ----------
     ref_sample_ : array, shape (n_features,)
-        edgeR TMM normalization reference sample feature vector.
+        TMM normalization reference sample feature vector.
     """
     def __init__(self, prior_count=1, memory=None):
         self.prior_count = prior_count

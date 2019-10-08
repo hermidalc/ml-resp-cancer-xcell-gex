@@ -67,13 +67,19 @@ deseq2_vst_transform <- function(
     ))
 }
 
-deseq2_feature_score <- function(X, y, blind=FALSE, fit_type="local") {
+deseq2_feature_score <- function(X, y, lfc=0, blind=FALSE, fit_type="local") {
     suppressPackageStartupMessages(library("DESeq2"))
     counts <- t(X)
     geo_means <- exp(rowMeans(log(counts)))
     dds <- DESeqDataSetFromMatrix(counts, data.frame(Class=factor(y)), ~Class)
     dds <- DESeq(dds, fitType=fit_type, quiet=TRUE)
-    results <- as.data.frame(results(dds, pAdjustMethod="BH"))
+    results <- as.data.frame(lfcShrink(
+        dds, coef=length(resultsNames(dds)), type="apeglm", lfcThreshold=lfc,
+        svalue=FALSE, parallel=FALSE, quiet=TRUE
+    ))
+    # results <- as.data.frame(results(
+    #     dds, lfcThreshold=lfc, altHypothesis="greaterAbs", pAdjustMethod="BH"
+    # ))
     results <- results[order(as.integer(row.names(results))), , drop=FALSE]
     vsd <- varianceStabilizingTransformation(dds, blind=blind, fitType=fit_type)
     return(list(
