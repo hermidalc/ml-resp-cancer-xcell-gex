@@ -53,14 +53,19 @@ deseq2_vst_transform <- function(
         )
         dds <- estimateSizeFactors(dds, quiet=TRUE)
         dds <- estimateDispersions(dds, fitType=fit_type, quiet=TRUE)
+        vsd <- varianceStabilizingTransformation(
+            dds, blind=blind, fitType=fit_type
+        )
     } else {
         dds <- DESeqDataSetFromMatrix(
             counts, data.frame(row.names=seq(1, ncol(counts))), ~1
         )
         dds <- estimateSizeFactors(dds, geoMeans=geo_means, quiet=TRUE)
         suppressMessages(dispersionFunction(dds) <- disp_func)
+        vsd <- varianceStabilizingTransformation(
+            dds, blind=FALSE, fitType=fit_type
+        )
     }
-    vsd <- varianceStabilizingTransformation(dds, blind=blind, fitType=fit_type)
     return(list(
         t(as.matrix(assay(vsd))), geo_means, sizeFactors(dds),
         dispersionFunction(dds)
