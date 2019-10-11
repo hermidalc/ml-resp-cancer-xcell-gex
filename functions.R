@@ -177,6 +177,24 @@ limma_feature_score <- function(X, y, robust=FALSE, trend=FALSE) {
     return(list(results$F, results$adj.P.Val))
 }
 
+# adapted from limma removeBatchEffect
+limma_remove_ba_fit <- function(X, batch, design=matrix(1, ncol(X), 1)) {
+    batch <- as.factor(batch)
+    contrasts(batch) <- contr.sum(levels(batch))
+    batch <- model.matrix(~batch)[, -1, drop=FALSE]
+	fit <- lmFit(t(X), cbind(design, batch))
+	beta <- fit$coefficients[, -(1:ncol(design)), drop=FALSE]
+	beta[is.na(beta)] <- 0
+	return(beta)
+}
+
+limma_remove_ba_transform <- function(X, batch) {
+    batch <- as.factor(batch)
+    contrasts(batch) <- contr.sum(levels(batch))
+    batch <- model.matrix(~batch)[, -1, drop=FALSE]
+    return(t(X) - beta %*% t(batch))
+}
+
 fcbf_feature_idxs <- function(X, y, threshold=0) {
     results <- Biocomb::select.fast.filter(
         cbind(X, as.factor(y)), disc.method="MDL", threshold=threshold
