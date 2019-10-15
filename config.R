@@ -1,7 +1,5 @@
 # config
 dataset_names <- c(
-    "lhc_nsclc",
-
     "chen",
     "gse5462",
     "gse6434",
@@ -64,8 +62,6 @@ needs_log2_dataset_names <- c(
     "schalper"
 )
 data_types <- c(
-    "met",
-    
     "gex",
     "gex_cyt",
     "gex_cyt_tmb",
