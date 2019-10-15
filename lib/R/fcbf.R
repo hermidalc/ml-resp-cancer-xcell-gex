@@ -12,7 +12,7 @@ select.fast.filter <- function(matrix, disc.method, threshold, attrs.nominal) {
         entropyF2 <- sum(entropyF2)
         fq <- table(m1, m2)
         entropyF12 <- 0
-        for (i in 1:length(fq2)) {
+        for (i in seq_len(length(fq2))) {
             fq0 <- fq[, i]/sum(fq[, i])
             vrem <- -sapply(fq0, function(z) if (z == 0) 0 else z * log(z))
             entropyF12 <- entropyF12 + (fq2[i]) * sum(vrem)

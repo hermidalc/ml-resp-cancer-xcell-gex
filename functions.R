@@ -37,8 +37,9 @@ data_nzero_sd_col_idxs <- function(X) {
 
 data_nzero_var_col_idxs <- function(X, freqCut=95/5, uniqueCut=1) {
     return(sort(setdiff(
-        1:ncol(X), caret::nearZeroVar(X, freqCut=freqCut, uniqueCut=uniqueCut)
-    )) - 1)
+        seq_len(ncol(X)),
+        caret::nearZeroVar(X, freqCut=freqCut, uniqueCut=uniqueCut
+    ))) - 1)
 }
 
 data_corr_col_idxs <- function(X, cutoff=0.5) {
