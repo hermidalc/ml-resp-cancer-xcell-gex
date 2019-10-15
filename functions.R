@@ -1,5 +1,5 @@
 suppressPackageStartupMessages(library("Biobase"))
-source("lib/R/biocomb_fscpp.R")
+source("lib/R/fcbf.R")
 
 eset_pdata <- function(eset) {
     return(pData(eset))
