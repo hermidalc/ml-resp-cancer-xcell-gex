@@ -1,4 +1,5 @@
 select.fast.filter <- function(matrix, disc.method, threshold, attrs.nominal) {
+
     CalcGain <- function(m1, m2, symm) {
         dd <- length(m1)
         fq1 <- table(m1)
