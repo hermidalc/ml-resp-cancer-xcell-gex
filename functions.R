@@ -136,9 +136,13 @@ edger_feature_score <- function(X, y, lfc=0, robust=TRUE, prior_count=1) {
     design <- model.matrix(~factor(y))
     dge <- estimateDisp(dge, design, robust=robust)
     fit <- glmQLFit(dge, design, robust=robust)
-    suppressMessages(tr <- glmTreat(fit, coef=ncol(design), lfc=lfc))
+    if (lfc == 0) {
+        glt <- glmQLFTest(fit, coef=ncol(design))
+    } else {
+        glt <- glmTreat(fit, coef=ncol(design), lfc=lfc)
+    }
     results <- as.data.frame(topTags(
-        tr, n=Inf, adjust.method="BH", sort.by="none"
+        glt, n=Inf, adjust.method="BH", sort.by="none"
     ))
     results <- results[order(as.integer(row.names(results))), , drop=FALSE]
     log_cpm <- cpm(dge, log=TRUE, prior.count=prior_count)
