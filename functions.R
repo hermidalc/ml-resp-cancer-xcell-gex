@@ -205,7 +205,7 @@ limma_remove_ba_transform <- function(X, batch) {
 }
 
 fcbf_feature_idxs <- function(X, y, threshold=0) {
-    results <- select.fast.filter(
+    results <- Biocomb::select.fast.filter(
         cbind(X, as.factor(y)), disc.method="MDL", threshold=threshold
     )
     results <- results[order(results$NumberFeature), , drop=FALSE]
