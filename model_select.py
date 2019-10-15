@@ -13,13 +13,13 @@ from itertools import combinations
 from operator import itemgetter
 from joblib import delayed, dump, Memory, Parallel, parallel_backend
 import numpy as np
-# import pandas as pd
-import rpy2.rinterface as rinterface
-rinterface.set_initoptions((b'rpy2', b'--quiet', b'--no-save', b'--max-ppsize=500000'))
+import pandas as pd
+import rpy2.rinterface_lib.embedded as r_embedded
+r_embedded.set_initoptions(('rpy2', '--quiet', '--no-save', '--max-ppsize=500000'))
 import rpy2.robjects as robjects
 from rpy2.robjects.packages import importr
 from rpy2.robjects import numpy2ri
-# from rpy2.robjects import pandas2ri
+from rpy2.robjects import pandas2ri
 from sklearn.base import clone
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.feature_selection import VarianceThreshold
@@ -250,6 +250,7 @@ r_data_nzsd_col_idxs = robjects.globalenv['data_nzero_sd_col_idxs']
 r_data_nzvr_col_idxs = robjects.globalenv['data_nzero_var_col_idxs']
 r_data_corr_col_idxs = robjects.globalenv['data_corr_col_idxs']
 numpy2ri.activate()
+pandas2ri.activate()
 
 if args.pipe_memory:
     cachedir = mkdtemp(dir=args.cache_dir)

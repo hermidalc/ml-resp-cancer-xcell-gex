@@ -1,4 +1,9 @@
 suppressPackageStartupMessages(library("Biobase"))
+source("lib/R/biocomb_fcbf_fscpp.R")
+
+eset_pdata <- function(eset) {
+    return(pData(eset))
+}
 
 eset_class_labels <- function(eset, samples=NULL) {
     if (!is.null(samples)) {
@@ -200,7 +205,7 @@ limma_remove_ba_transform <- function(X, batch) {
 }
 
 fcbf_feature_idxs <- function(X, y, threshold=0) {
-    results <- Biocomb::select.fast.filter(
+    results <- select.fast.filter(
         cbind(X, as.factor(y)), disc.method="MDL", threshold=threshold
     )
     results <- results[order(results$NumberFeature), , drop=FALSE]
