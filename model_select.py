@@ -49,6 +49,7 @@ from feature_selection import (
     EdgeRFilterByExpr, FCBF, LimmaScorerClassification, LimmaVoom,
     MutualInfoScorerClassification, ReliefF, RFE, SelectFromModel, SelectKBest)
 from preprocessing import DESeq2RLEVSTransformer, EdgeRTMMLogCPMTransformer
+from model_selection import StratifiedGroupShuffleSplit
 
 def str_list(arg):
     return list(map(str, arg.split(',')))
