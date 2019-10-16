@@ -78,11 +78,21 @@ deseq2_vst_transform <- function(
     ))
 }
 
-deseq2_feature_score <- function(X, y, lfc=0, blind=FALSE, fit_type="local") {
+deseq2_feature_score <- function(
+    X, y, y_meta=NULL, lfc=0, blind=FALSE, fit_type="local", model_batch=FALSE
+) {
     suppressPackageStartupMessages(library("DESeq2"))
     counts <- t(X)
     geo_means <- exp(rowMeans(log(counts)))
-    dds <- DESeqDataSetFromMatrix(counts, data.frame(Class=factor(y)), ~Class)
+    if (!is.null(y_meta) && model_batch) {
+        dds <- DESeqDataSetFromMatrix(
+            counts, as.data.frame(y_meta), ~Batch + Class
+        )
+    } else {
+        dds <- DESeqDataSetFromMatrix(
+            counts, data.frame(Class=factor(y)), ~Class
+        )
+    }
     dds <- DESeq(dds, fitType=fit_type, quiet=TRUE)
     results <- as.data.frame(lfcShrink(
         dds, coef=length(resultsNames(dds)), type="apeglm", lfcThreshold=lfc,
@@ -108,7 +118,7 @@ edger_logcpm_transform <- function(X, prior_count=1) {
     return(t(edgeR::cpm(t(X), log=TRUE, prior.count=prior_count)))
 }
 
-# from edgeR codebase
+# adapted from edgeR::calcNormFactors source code
 edger_tmm_ref_column <- function(counts, lib.size=colSums(counts), p=0.75) {
     y <- t(t(counts) / lib.size)
     f <- apply(y, 2, function(x) quantile(x, p=p))
@@ -134,12 +144,18 @@ edger_tmm_logcpm_transform <- function(X, ref_sample=NULL, prior_count=1) {
     return(list(t(log_cpm), ref_sample))
 }
 
-edger_feature_score <- function(X, y, lfc=0, robust=TRUE, prior_count=1) {
+edger_feature_score <- function(
+    X, y, y_meta=NULL, lfc=0, robust=TRUE, prior_count=1, model_batch=FALSE
+) {
     suppressPackageStartupMessages(library("edgeR"))
     counts <- t(X)
     dge <- DGEList(counts=counts, group=y)
     dge <- calcNormFactors(dge, method="TMM")
-    design <- model.matrix(~factor(y))
+    if (!is.null(y_meta) && model_batch) {
+        design <- model.matrix(~Batch + Class, data=y_meta)
+    } else {
+        design <- model.matrix(~factor(y))
+    }
     dge <- estimateDisp(dge, design, robust=robust)
     fit <- glmQLFit(dge, design, robust=robust)
     if (lfc == 0) {
@@ -156,15 +172,44 @@ edger_feature_score <- function(X, y, lfc=0, robust=TRUE, prior_count=1) {
     return(list(results$PValue, results$FDR, t(log_cpm), ref_sample))
 }
 
-limma_voom_feature_score <- function(X, y, lfc=0, robust=TRUE, prior_count=1) {
+limma_voom_feature_score <- function(
+    X, y, y_meta=NULL, lfc=0, robust=TRUE, prior_count=1, model_batch=FALSE,
+    model_dupcor=FALSE
+) {
     suppressPackageStartupMessages(library("edgeR"))
     suppressPackageStartupMessages(library("limma"))
     counts <- t(X)
     dge <- DGEList(counts=counts, group=y)
     dge <- calcNormFactors(dge, method="TMM")
-    design <- model.matrix(~factor(y))
-    v <- voom(dge, design)
-    fit <- lmFit(v, design)
+    if (!is.null(y_meta) && (model_batch || model_dupcor)) {
+        if (model_batch) {
+            formula <- ~Batch + Class
+        } else {
+            formula <- ~Class
+        }
+        design <- model.matrix(formula, data=y_meta)
+        v <- voom(dge, design)
+        if (model_dupcor) {
+            suppressMessages(
+                dupcor <- duplicateCorrelation(v, design, block=y_meta$Block)
+            )
+            v <- voom(
+                dge, design, block=y_meta$Block, correlation=dupcor$consensus
+            )
+            suppressMessages(
+                dupcor <- duplicateCorrelation(v, design, block=y_meta$Block)
+            )
+            fit <- lmFit(
+                v, design, block=y_meta$Block, correlation=dupcor$consensus
+            )
+        } else {
+            fit <- lmFit(v, design)
+        }
+    } else {
+        design <- model.matrix(~factor(y))
+        v <- voom(dge, design)
+        fit <- lmFit(v, design)
+    }
     fit <- treat(fit, lfc=lfc, robust=robust)
     results <- topTreat(fit, number=Inf, adjust.method="BH", sort.by="none")
     results <- results[order(as.integer(row.names(results))), , drop=FALSE]
@@ -173,29 +218,67 @@ limma_voom_feature_score <- function(X, y, lfc=0, robust=TRUE, prior_count=1) {
     return(list(results$P.Value, results$adj.P.Val, t(log_cpm), ref_sample))
 }
 
-limma_feature_score <- function(X, y, robust=FALSE, trend=FALSE) {
+dream_voom_feature_score <- function(
+    X, y, y_meta, lfc=0, prior_count=1, model_batch=FALSE, n_threads=1
+) {
+    suppressPackageStartupMessages(library("edgeR"))
     suppressPackageStartupMessages(library("limma"))
-    design <- model.matrix(~0 + factor(y))
-    colnames(design) <- c("Class0", "Class1")
-    fit <- lmFit(t(X), design)
-    fit <- contrasts.fit(fit, makeContrasts(
-        Class1VsClass0=Class1-Class0, levels=design
+    suppressPackageStartupMessages(library("variancePartition"))
+    suppressPackageStartupMessages(library("BiocParallel"))
+    if (n_threads > 1) {
+        register(MultiCoreParam(workers=n_threads))
+    } else {
+        register(SerialParam())
+    }
+    counts <- t(X)
+    dge <- DGEList(counts=counts, group=y)
+    dge <- calcNormFactors(dge, method="TMM")
+    if (model_batch) {
+        formula <- ~Batch + Class + (1|Block)
+    } else {
+        formula <- ~Class + (1|Block)
+    }
+    invisible(capture.output(
+        v <- voomWithDreamWeights(dge, formula, y_meta)
     ))
-    fit <- eBayes(fit, robust=robust, trend=trend)
-    results <- topTableF(fit, number=Inf, adjust.method="BH", sort.by="none")
+    invisible(capture.output(
+        fit <- dream(v, formula, y_meta, suppressWarnings=TRUE)
+    ))
+    results <- topTable(
+        fit, coef="Class1", lfc=lfc, number=Inf, adjust.method="BH",
+        sort.by="none"
+    )
     results <- results[order(as.integer(row.names(results))), , drop=FALSE]
-    return(list(results$F, results$adj.P.Val))
+    log_cpm <- cpm(dge, log=TRUE, prior.count=prior_count)
+    ref_sample <- counts[, edger_tmm_ref_column(counts)]
+    return(list(results$P.Value, results$adj.P.Val, t(log_cpm), ref_sample))
 }
 
-# adapted from limma removeBatchEffect
+limma_feature_score <- function(
+    X, y, y_meta=NULL, lfc=0, robust=FALSE, trend=FALSE, model_batch=FALSE
+) {
+    suppressPackageStartupMessages(library("limma"))
+    if (!is.null(y_meta) && model_batch) {
+        design <- model.matrix(~Batch + Class, data=y_meta)
+    } else {
+        design <- model.matrix(~factor(y))
+    }
+    fit <- lmFit(t(X), design)
+    fit <- treat(fit, lfc=lfc, robust=robust, trend=trend)
+    results <- topTreat(fit, number=Inf, adjust.method="BH", sort.by="none")
+    results <- results[order(as.integer(row.names(results))), , drop=FALSE]
+    return(list(results$P.Value, results$adj.P.Val))
+}
+
+# adapted from limma::removeBatchEffect source code
 limma_remove_ba_fit <- function(X, batch, design=matrix(1, ncol(X), 1)) {
     batch <- as.factor(batch)
     contrasts(batch) <- contr.sum(levels(batch))
     batch <- model.matrix(~batch)[, -1, drop=FALSE]
-	fit <- lmFit(t(X), cbind(design, batch))
-	beta <- fit$coefficients[, -(1:ncol(design)), drop=FALSE]
-	beta[is.na(beta)] <- 0
-	return(beta)
+    fit <- lmFit(t(X), cbind(design, batch))
+    beta <- fit$coefficients[, -(1:ncol(design)), drop=FALSE]
+    beta[is.na(beta)] <- 0
+    return(beta)
 }
 
 limma_remove_ba_transform <- function(X, batch) {

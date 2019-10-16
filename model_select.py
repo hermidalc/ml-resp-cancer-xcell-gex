@@ -5,12 +5,12 @@ import os
 import warnings
 from argparse import ArgumentParser
 from copy import deepcopy
+from itertools import combinations
+from operator import itemgetter
 from pprint import pprint
 from tempfile import mkdtemp
 from shutil import rmtree
 from natsort import natsorted
-from itertools import combinations
-from operator import itemgetter
 from joblib import delayed, dump, Memory, Parallel, parallel_backend
 import numpy as np
 import pandas as pd
