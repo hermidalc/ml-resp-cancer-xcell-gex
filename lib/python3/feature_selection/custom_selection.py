@@ -39,13 +39,13 @@ def deseq2_vst_transform(X, y, geo_means, size_factors, disp_func, blind,
             np.array(sf, dtype=float), df)
 
 
-def deseq2_feature_score(X, y, y_meta, lfc, blind, fit_type, model_batch):
-    pv, pa, xt, gm, sf, df = r_deseq2_feature_score(
+def deseq2_feature_score(X, y, y_meta, lfc, blind, fit_type, model_batch,
+                         n_threads):
+    sv, xt, gm, sf, df = r_deseq2_feature_score(
         X, y, y_meta=y_meta, lfc=lfc, blind=blind, fit_type=fit_type,
-        model_batch=model_batch)
-    return (np.array(pv, dtype=float), np.array(pa, dtype=float),
-            np.array(xt, dtype=float), np.array(gm, dtype=float),
-            np.array(sf, dtype=float), df)
+        model_batch=model_batch, n_threads=n_threads)
+    return (np.array(sv, dtype=float), np.array(xt, dtype=float),
+            np.array(gm, dtype=float), np.array(sf, dtype=float), df)
 
 
 def edger_tmm_logcpm_transform(X, ref_sample, prior_count):
@@ -113,6 +113,11 @@ class DESeq2(BaseEstimator, SelectorMixin):
     model_batch : bool (default = False)
         Model batch effect if y_meta passed to fit and Batch column exists
 
+    n_threads : int (default = 1)
+        Number of DESeq2 parallel threads. This should be carefully selected
+        when using within Grid/RandomizedSearchCV to not oversubscribe CPU
+        and memory resources.
+
     memory : None, str or object with the joblib.Memory interface \
         (default = None)
         Used for internal caching. By default, no caching is done.
@@ -120,11 +125,8 @@ class DESeq2(BaseEstimator, SelectorMixin):
 
     Attributes
     ----------
-    pvals_ : array, shape (n_features,)
-        Feature raw p-values.
-
-    padjs_ : array, shape (n_features,)
-        Feature adjusted p-values.
+    svals_ : array, shape (n_features,)
+        Feature s-values.
 
     geo_means_ : array, shape (n_features,)
         Feature geometric means.
@@ -137,12 +139,13 @@ class DESeq2(BaseEstimator, SelectorMixin):
     """
 
     def __init__(self, k='all', lfc=0, blind=False, fit_type='local',
-                 model_batch=False, memory=None):
+                 model_batch=False, n_threads=1, memory=None):
         self.k = k
         self.lfc = lfc
         self.blind = blind
         self.fit_type = fit_type
         self.model_batch = model_batch
+        self.n_threads = n_threads
         self.memory = memory
 
     def fit(self, X, y, y_meta=None):
@@ -165,16 +168,17 @@ class DESeq2(BaseEstimator, SelectorMixin):
         self : object
             Returns self.
         """
-        X, y = check_X_y(X, y, dtype=np.int64)
+        X, y = check_X_y(X, y, dtype=int)
         self._check_params(X, y)
         memory = check_memory(self.memory)
         if y_meta is None:
             y_meta = robjects.NULL
-        (self.pvals_, self.padjs_, self._vst_data, self.geo_means_,
-         self.size_factors_, self.disp_func_) = (
+        (self.svals_, self._vst_data, self.geo_means_, self.size_factors_,
+         self.disp_func_) = (
              memory.cache(deseq2_feature_score)(
                  X, y, y_meta=y_meta, lfc=self.lfc, blind=self.blind,
-                 fit_type=self.fit_type, model_batch=self.model_batch))
+                 fit_type=self.fit_type, model_batch=self.model_batch,
+                 n_threads=self.n_threads))
         return self
 
     def transform(self, X):
@@ -191,7 +195,7 @@ class DESeq2(BaseEstimator, SelectorMixin):
             matrix with only the selected features.
         """
         check_is_fitted(self, '_vst_data')
-        X = check_array(X, dtype=np.int64)
+        X = check_array(X, dtype=int)
         if hasattr(self, '_train_done'):
             memory = check_memory(self.memory)
             X = memory.cache(deseq2_vst_transform)(
@@ -226,12 +230,12 @@ class DESeq2(BaseEstimator, SelectorMixin):
                 % self.k)
 
     def _get_support_mask(self):
-        check_is_fitted(self, 'pvals_')
-        mask = np.zeros_like(self.pvals_, dtype=bool)
+        check_is_fitted(self, 'svals_')
+        mask = np.zeros_like(self.svals_, dtype=bool)
         if self.k == 'all':
-            mask = np.ones_like(self.pvals_, dtype=bool)
+            mask = np.ones_like(self.svals_, dtype=bool)
         elif self.k > 0:
-            mask[np.argsort(self.pvals_, kind='mergesort')[:self.k]] = True
+            mask[np.argsort(self.svals_, kind='mergesort')[:self.k]] = True
         return mask
 
 
@@ -306,7 +310,7 @@ class EdgeR(BaseEstimator, SelectorMixin):
         self : object
             Returns self.
         """
-        X, y = check_X_y(X, y, dtype=np.int64)
+        X, y = check_X_y(X, y, dtype=int)
         self._check_params(X, y)
         memory = check_memory(self.memory)
         if y_meta is None:
@@ -331,7 +335,7 @@ class EdgeR(BaseEstimator, SelectorMixin):
             only the selected features.
         """
         check_is_fitted(self, '_log_cpms')
-        X = check_array(X, dtype=np.int64)
+        X = check_array(X, dtype=int)
         if hasattr(self, '_train_done'):
             memory = check_memory(self.memory)
             X = memory.cache(edger_tmm_logcpm_transform)(
@@ -397,7 +401,7 @@ class EdgeRFilterByExpr(BaseEstimator, SelectorMixin):
         self : object
             Returns self.
         """
-        X, y = check_X_y(X, y, dtype=np.int64)
+        X, y = check_X_y(X, y, dtype=int)
         self._mask = np.array(r_edger_filterbyexpr_mask(X, y), dtype=bool)
         return self
 
@@ -432,7 +436,7 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
         Model batch effect if y_meta passed to fit and Batch column exists
 
     model_dupcor : bool (default = False)
-        Model limma duplicateCorrelation if y_meta passed to fit and Block
+        Model limma duplicateCorrelation if y_meta passed to fit and Group
         column exists
 
     memory : None, str or object with the joblib.Memory interface \
@@ -482,7 +486,7 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
         self : object
             Returns self.
         """
-        X, y = check_X_y(X, y, dtype=np.int64)
+        X, y = check_X_y(X, y, dtype=int)
         self._check_params(X, y)
         memory = check_memory(self.memory)
         if y_meta is None:
@@ -508,7 +512,7 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
             only the selected features.
         """
         check_is_fitted(self, '_log_cpms')
-        X = check_array(X, dtype=np.int64)
+        X = check_array(X, dtype=int)
         if hasattr(self, '_train_done'):
             memory = check_memory(self.memory)
             X = memory.cache(edger_tmm_logcpm_transform)(
@@ -575,7 +579,7 @@ class DreamVoom(BaseEstimator, SelectorMixin):
     n_threads : int (default = 1)
         Number of dream parallel threads. This should be carefully selected
         when using within Grid/RandomizedSearchCV to not oversubscribe CPU
-        resources.
+        and memory resources.
 
     memory : None, str or object with the joblib.Memory interface \
         (default = None)
@@ -623,7 +627,7 @@ class DreamVoom(BaseEstimator, SelectorMixin):
         self : object
             Returns self.
         """
-        X, y = check_X_y(X, y, dtype=np.int64)
+        X, y = check_X_y(X, y, dtype=int)
         self._check_params(X, y)
         memory = check_memory(self.memory)
         self.pvals_, self.padjs_, self._log_cpms, self.ref_sample_ = (
@@ -646,7 +650,7 @@ class DreamVoom(BaseEstimator, SelectorMixin):
             only the selected features.
         """
         check_is_fitted(self, '_log_cpms')
-        X = check_array(X, dtype=np.int64)
+        X = check_array(X, dtype=int)
         if hasattr(self, '_train_done'):
             memory = check_memory(self.memory)
             X = memory.cache(edger_tmm_logcpm_transform)(

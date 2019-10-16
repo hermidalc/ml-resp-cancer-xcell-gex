@@ -79,12 +79,23 @@ deseq2_vst_transform <- function(
 }
 
 deseq2_feature_score <- function(
-    X, y, y_meta=NULL, lfc=0, blind=FALSE, fit_type="local", model_batch=FALSE
+    X, y, y_meta=NULL, lfc=0, blind=FALSE, fit_type="local", model_batch=FALSE,
+    n_threads=1
 ) {
     suppressPackageStartupMessages(library("DESeq2"))
+    suppressPackageStartupMessages(library("BiocParallel"))
+    if (n_threads > 1) {
+        register(MulticoreParam(workers=n_threads))
+        parallel <- TRUE
+    } else {
+        register(SerialParam())
+        parallel <- FALSE
+    }
     counts <- t(X)
     geo_means <- exp(rowMeans(log(counts)))
     if (!is.null(y_meta) && model_batch) {
+        y_meta$Batch <- as.factor(y_meta$Batch)
+        y_meta$Class <- as.factor(y_meta$Class)
         dds <- DESeqDataSetFromMatrix(
             counts, as.data.frame(y_meta), ~Batch + Class
         )
@@ -93,19 +104,20 @@ deseq2_feature_score <- function(
             counts, data.frame(Class=factor(y)), ~Class
         )
     }
-    dds <- DESeq(dds, fitType=fit_type, quiet=TRUE)
-    results <- as.data.frame(lfcShrink(
+    dds <- DESeq(dds, fitType=fit_type, parallel=parallel, quiet=TRUE)
+    suppressMessages(results <- as.data.frame(lfcShrink(
         dds, coef=length(resultsNames(dds)), type="apeglm", lfcThreshold=lfc,
-        svalue=FALSE, parallel=FALSE, quiet=TRUE
-    ))
+        svalue=TRUE, parallel=parallel, quiet=TRUE
+    )))
     # results <- as.data.frame(results(
-    #     dds, lfcThreshold=lfc, altHypothesis="greaterAbs", pAdjustMethod="BH"
+    #     dds, name=resultsNames(dds)[length(resultsNames(dds))],
+    #     lfcThreshold=lfc, altHypothesis="greaterAbs", pAdjustMethod="BH"
     # ))
     results <- results[order(as.integer(row.names(results))), , drop=FALSE]
     vsd <- varianceStabilizingTransformation(dds, blind=blind, fitType=fit_type)
     return(list(
-        results$pvalue, results$padj, t(as.matrix(assay(vsd))), geo_means,
-        sizeFactors(dds), dispersionFunction(dds)
+        results$svalue, t(as.matrix(assay(vsd))), geo_means, sizeFactors(dds),
+        dispersionFunction(dds)
     ))
 }
 
@@ -152,6 +164,8 @@ edger_feature_score <- function(
     dge <- DGEList(counts=counts, group=y)
     dge <- calcNormFactors(dge, method="TMM")
     if (!is.null(y_meta) && model_batch) {
+        y_meta$Batch <- as.factor(y_meta$Batch)
+        y_meta$Class <- as.factor(y_meta$Class)
         design <- model.matrix(~Batch + Class, data=y_meta)
     } else {
         design <- model.matrix(~factor(y))
@@ -184,23 +198,26 @@ limma_voom_feature_score <- function(
     if (!is.null(y_meta) && (model_batch || model_dupcor)) {
         if (model_batch) {
             formula <- ~Batch + Class
+            y_meta$Batch <- as.factor(y_meta$Batch)
         } else {
             formula <- ~Class
         }
+        y_meta$Class <- as.factor(y_meta$Class)
         design <- model.matrix(formula, data=y_meta)
         v <- voom(dge, design)
         if (model_dupcor) {
+            y_meta$Group <- as.factor(y_meta$Group)
             suppressMessages(
-                dupcor <- duplicateCorrelation(v, design, block=y_meta$Block)
+                dupcor <- duplicateCorrelation(v, design, block=y_meta$Group)
             )
             v <- voom(
-                dge, design, block=y_meta$Block, correlation=dupcor$consensus
+                dge, design, block=y_meta$Group, correlation=dupcor$consensus
             )
             suppressMessages(
-                dupcor <- duplicateCorrelation(v, design, block=y_meta$Block)
+                dupcor <- duplicateCorrelation(v, design, block=y_meta$Group)
             )
             fit <- lmFit(
-                v, design, block=y_meta$Block, correlation=dupcor$consensus
+                v, design, block=y_meta$Group, correlation=dupcor$consensus
             )
         } else {
             fit <- lmFit(v, design)
@@ -211,7 +228,9 @@ limma_voom_feature_score <- function(
         fit <- lmFit(v, design)
     }
     fit <- treat(fit, lfc=lfc, robust=robust)
-    results <- topTreat(fit, number=Inf, adjust.method="BH", sort.by="none")
+    results <- topTreat(
+        fit, coef=ncol(design), number=Inf, adjust.method="BH", sort.by="none"
+    )
     results <- results[order(as.integer(row.names(results))), , drop=FALSE]
     log_cpm <- cpm(dge, log=TRUE, prior.count=prior_count)
     ref_sample <- counts[, edger_tmm_ref_column(counts)]
@@ -226,7 +245,7 @@ dream_voom_feature_score <- function(
     suppressPackageStartupMessages(library("variancePartition"))
     suppressPackageStartupMessages(library("BiocParallel"))
     if (n_threads > 1) {
-        register(MultiCoreParam(workers=n_threads))
+        register(MulticoreParam(workers=n_threads))
     } else {
         register(SerialParam())
     }
@@ -234,10 +253,13 @@ dream_voom_feature_score <- function(
     dge <- DGEList(counts=counts, group=y)
     dge <- calcNormFactors(dge, method="TMM")
     if (model_batch) {
-        formula <- ~Batch + Class + (1|Block)
+        formula <- ~Batch + Class + (1|Group)
+        y_meta$Batch <- as.factor(y_meta$Batch)
     } else {
-        formula <- ~Class + (1|Block)
+        formula <- ~Class + (1|Group)
     }
+    y_meta$Class <- as.factor(y_meta$Class)
+    y_meta$Group <- as.factor(y_meta$Group)
     invisible(capture.output(
         v <- voomWithDreamWeights(dge, formula, y_meta)
     ))
@@ -245,7 +267,7 @@ dream_voom_feature_score <- function(
         fit <- dream(v, formula, y_meta, suppressWarnings=TRUE)
     ))
     results <- topTable(
-        fit, coef="Class1", lfc=lfc, number=Inf, adjust.method="BH",
+        fit, coef=ncol(design), lfc=lfc, number=Inf, adjust.method="BH",
         sort.by="none"
     )
     results <- results[order(as.integer(row.names(results))), , drop=FALSE]
@@ -259,13 +281,17 @@ limma_feature_score <- function(
 ) {
     suppressPackageStartupMessages(library("limma"))
     if (!is.null(y_meta) && model_batch) {
+        y_meta$Batch <- as.factor(y_meta$Batch)
+        y_meta$Class <- as.factor(y_meta$Class)
         design <- model.matrix(~Batch + Class, data=y_meta)
     } else {
         design <- model.matrix(~factor(y))
     }
     fit <- lmFit(t(X), design)
     fit <- treat(fit, lfc=lfc, robust=robust, trend=trend)
-    results <- topTreat(fit, number=Inf, adjust.method="BH", sort.by="none")
+    results <- topTreat(
+        fit, coef=ncol(design), number=Inf, adjust.method="BH", sort.by="none"
+    )
     results <- results[order(as.integer(row.names(results))), , drop=FALSE]
     return(list(results$P.Value, results$adj.P.Val))
 }
@@ -300,7 +326,7 @@ cfs_feature_idxs <- function(X, y) {
     X <- as.data.frame(X)
     colnames(X) <- seq(1, ncol(X))
     feature_idxs <- FSelector::cfs(
-        as.formula("Class ~ ."), cbind(X, "Class"=as.factor(y))
+        as.formula("Class ~ ."), cbind(X, "Class"=factor(y))
     )
     return(as.integer(feature_idxs) - 1)
 }
@@ -309,7 +335,7 @@ gain_ratio_feature_idxs <- function(X, y) {
     X <- as.data.frame(X)
     colnames(X) <- seq(1, ncol(X))
     results <- FSelector::gain.ratio(
-        as.formula("Class ~ ."), cbind(X, "Class"=as.factor(y)), unit="log2"
+        as.formula("Class ~ ."), cbind(X, "Class"=factor(y)), unit="log2"
     )
     results <- results[results$attr_importance > 0, , drop=FALSE]
     results <- results[order(as.integer(row.names(results))), , drop=FALSE]
@@ -320,7 +346,7 @@ sym_uncert_feature_idxs <- function(X, y) {
     X <- as.data.frame(X)
     colnames(X) <- seq(1, ncol(X))
     results <- FSelector::symmetrical.uncertainty(
-        as.formula("Class ~ ."), cbind(X, "Class"=as.factor(y)), unit="log2"
+        as.formula("Class ~ ."), cbind(X, "Class"=factor(y)), unit="log2"
     )
     results <- results[results$attr_importance > 0, , drop=FALSE]
     results <- results[order(as.integer(row.names(results))), , drop=FALSE]
@@ -331,7 +357,7 @@ relieff_feature_score <- function(X, y, num_neighbors=10, sample_size=5) {
     X <- as.data.frame(X)
     colnames(X) <- seq(1, ncol(X))
     results <- FSelector::relief(
-        as.formula("Class ~ ."), cbind(X, "Class"=as.factor(y)),
+        as.formula("Class ~ ."), cbind(X, "Class"=factor(y)),
         neighbours.count=num_neighbors, sample.size=sample_size
     )
     results <- results[order(as.integer(row.names(results))), , drop=FALSE]
