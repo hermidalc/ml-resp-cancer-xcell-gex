@@ -1,10 +1,6 @@
 suppressPackageStartupMessages(library("Biobase"))
 source("lib/R/fcbf.R")
 
-eset_pdata <- function(eset) {
-    return(pData(eset))
-}
-
 eset_class_labels <- function(eset, samples=NULL) {
     if (!is.null(samples)) {
         return(eset$Class[c(samples)])
