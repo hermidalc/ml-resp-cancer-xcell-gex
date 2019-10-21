@@ -4,7 +4,9 @@ options(warn=1)
 suppressPackageStartupMessages(library("argparse"))
 suppressPackageStartupMessages(library("Biobase"))
 suppressPackageStartupMessages(library("WGCNA"))
-source("config.R")
+
+proj_root_dir <- dirname(sys.frame(1)$ofile)
+source(paste(proj_root_dir, "config.R", sep="/"))
 
 parser <- ArgumentParser()
 parser$add_argument(

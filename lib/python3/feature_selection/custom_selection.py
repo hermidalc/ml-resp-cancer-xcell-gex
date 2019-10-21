@@ -11,7 +11,7 @@ from sklearn.utils.validation import check_is_fitted, check_memory
 from .univariate_selection import BaseScorer
 
 r_base = importr('base')
-r_base.source('functions.R')
+r_base.source(sys.path[0] + '/lib/R/functions.R')
 r_deseq2_vst_transform = robjects.globalenv['deseq2_vst_transform']
 r_deseq2_feature_score = robjects.globalenv['deseq2_feature_score']
 r_edger_filterbyexpr_mask = robjects.globalenv['edger_filterbyexpr_mask']
@@ -26,17 +26,10 @@ r_relieff_feature_score = robjects.globalenv['relieff_feature_score']
 numpy2ri.activate()
 
 
-def deseq2_vst_transform(X, y, geo_means, size_factors, disp_func, blind,
-                         fit_type):
-    if y is not None:
-        xt, gm, sf, df = r_deseq2_vst_transform(
-            X, y, blind=blind, fit_type=fit_type)
-    else:
-        xt, gm, sf, df = r_deseq2_vst_transform(
-            X, geo_means=geo_means, size_factors=size_factors,
-            disp_func=disp_func, blind=blind, fit_type=fit_type)
-    return (np.array(xt, dtype=float), np.array(gm, dtype=float),
-            np.array(sf, dtype=float), df)
+def deseq2_vst_transform(X, geo_means, size_factors, disp_func, fit_type):
+    return np.array(r_deseq2_vst_transform(
+        X, geo_means=geo_means, size_factors=size_factors, disp_func=disp_func,
+        fit_type=fit_type), dtype=float)
 
 
 def deseq2_feature_score(X, y, y_meta, lfc, blind, fit_type, model_batch,
@@ -49,9 +42,8 @@ def deseq2_feature_score(X, y, y_meta, lfc, blind, fit_type, model_batch,
 
 
 def edger_tmm_logcpm_transform(X, ref_sample, prior_count):
-    xt, rs = r_edger_tmm_logcpm_transform(X, ref_sample=ref_sample,
-                                          prior_count=prior_count)
-    return np.array(xt, dtype=float), np.array(rs, dtype=float)
+    return np.array(r_edger_tmm_logcpm_transform(
+        X, ref_sample=ref_sample, prior_count=prior_count), dtype=float)
 
 
 def edger_feature_score(X, y, y_meta, lfc, robust, prior_count, model_batch):
@@ -86,8 +78,8 @@ def fcbf_feature_idxs(X, y, threshold):
 
 
 def relieff_feature_score(X, y, num_neighbors, sample_size):
-    return np.array(r_relieff_feature_score(X, y, num_neighbors=num_neighbors,
-                                            sample_size=sample_size),
+    return np.array(r_relieff_feature_score(
+        X, y, num_neighbors=num_neighbors, sample_size=sample_size),
                     dtype=float)
 
 
@@ -101,17 +93,18 @@ class DESeq2(BaseEstimator, SelectorMixin):
         Number of top features to select. The "all" option bypasses selection,
         for use in a parameter search.
 
-    lfc : float (default = 0)
-        lfcThreshold absolute log fold-change minimum threshold.
+    fc : float (default = 1.0)
+        lfcShrink absolute fold change minimum threshold.
 
     blind : bool (default = False)
-        varianceStabilizingTransformation() blind option
+        varianceStabilizingTransformation blind option.
 
-    fit_type : str (default = local)
-        estimateDispersions() fitType option
+    fit_type : str (default = "local")
+        estimateDispersions and varianceStabilizingTransformation fitType
+        option.
 
     model_batch : bool (default = False)
-        Model batch effect if y_meta passed to fit and Batch column exists
+        Model batch effect if y_meta passed to fit and Batch column exists.
 
     n_threads : int (default = 1)
         Number of DESeq2 parallel threads. This should be carefully selected
@@ -138,10 +131,10 @@ class DESeq2(BaseEstimator, SelectorMixin):
         RLE normalization dispersion function.
     """
 
-    def __init__(self, k='all', lfc=0, blind=False, fit_type='local',
+    def __init__(self, k='all', fc=1, blind=False, fit_type='local',
                  model_batch=False, n_threads=1, memory=None):
         self.k = k
-        self.lfc = lfc
+        self.fc = fc
         self.blind = blind
         self.fit_type = fit_type
         self.model_batch = model_batch
@@ -156,12 +149,11 @@ class DESeq2(BaseEstimator, SelectorMixin):
             Training counts data matrix.
 
         y : array-like, shape = (n_samples,)
-            Target vector (class labels in classification, real numbers in
-            regression).
+            Training sample class labels.
 
-        y_meta : array-like, list, pandas.DataFrame, pandas.Series,
+        y_meta : array-like, list, pandas.DataFrame, pandas.Series, \
             (default = None), shape = (n_samples, n_metadata)
-            Target metadata.
+            Training sample metadata.
 
         Returns
         -------
@@ -174,11 +166,10 @@ class DESeq2(BaseEstimator, SelectorMixin):
         if y_meta is None:
             y_meta = robjects.NULL
         (self.svals_, self._vst_data, self.geo_means_, self.size_factors_,
-         self.disp_func_) = (
-             memory.cache(deseq2_feature_score)(
-                 X, y, y_meta=y_meta, lfc=self.lfc, blind=self.blind,
-                 fit_type=self.fit_type, model_batch=self.model_batch,
-                 n_threads=self.n_threads))
+         self.disp_func_) = memory.cache(deseq2_feature_score)(
+             X, y, y_meta=y_meta, lfc=np.log2(self.fc), blind=self.blind,
+             fit_type=self.fit_type, model_batch=self.model_batch,
+             n_threads=self.n_threads)
         return self
 
     def transform(self, X):
@@ -186,12 +177,12 @@ class DESeq2(BaseEstimator, SelectorMixin):
         Parameters
         ----------
         X : array-like, shape = (n_samples, n_features)
-            Counts data matrix.
+            Input counts data matrix.
 
         Returns
         -------
         Xr : array of shape (n_samples, n_selected_features)
-            DESeq2 median-of-ratios normalized VST transformed input data
+            DESeq2 median-of-ratios normalized VST transformed counts data
             matrix with only the selected features.
         """
         check_is_fitted(self, '_vst_data')
@@ -199,9 +190,8 @@ class DESeq2(BaseEstimator, SelectorMixin):
         if hasattr(self, '_train_done'):
             memory = check_memory(self.memory)
             X = memory.cache(deseq2_vst_transform)(
-                X, y=None, geo_means=self.geo_means_,
-                size_factors=self.size_factors_, disp_func=self.disp_func_,
-                blind=self.blind, fit_type=self.fit_type)[0]
+                X, geo_means=self.geo_means_, size_factors=self.size_factors_,
+                disp_func=self.disp_func_, fit_type=self.fit_type)
         else:
             X = self._vst_data
             self._train_done = True
@@ -212,7 +202,7 @@ class DESeq2(BaseEstimator, SelectorMixin):
         Parameters
         ----------
         X : array-like, shape = (n_samples, n_features)
-            Input data matrix.
+            Input transformed data matrix.
 
         Returns
         -------
@@ -228,6 +218,9 @@ class DESeq2(BaseEstimator, SelectorMixin):
                 "k should be 0 <= k <= n_features; got %r."
                 "Use k='all' to return all features."
                 % self.k)
+        if self.fc < 1:
+            raise ValueError(
+                "fold change threshold should be >= 1; got %r." % self.fc)
 
     def _get_support_mask(self):
         check_is_fitted(self, 'svals_')
@@ -249,12 +242,12 @@ class EdgeR(BaseEstimator, SelectorMixin):
         Number of top features to select. The "all" option bypasses selection,
         for use in a parameter search.
 
-    lfc : float (default = 0)
-        glmTreat absolute log fold-change minimum threshold.  Default value
-        of 0 gives glmQLFTest results.
+    fc : float (default = 1.0)
+        glmTreat absolute fold change minimum threshold.  Default value of 1.0
+        gives glmQLFTest results.
 
     robust : bool (default = True)
-        estimateDisp and glmQLFit robust option
+        estimateDisp and glmQLFit robust option.
 
     prior_count : int (default = 1)
         Average count to add to each observation to avoid taking log of zero.
@@ -262,7 +255,7 @@ class EdgeR(BaseEstimator, SelectorMixin):
         counts and more shrinkage of the corresponding log fold changes.
 
     model_batch : bool (default = False)
-        Model batch effect if y_meta passed to fit and Batch column exists
+        Model batch effect if y_meta passed to fit and Batch column exists.
 
     memory : None, str or object with the joblib.Memory interface \
         (default = None)
@@ -281,10 +274,10 @@ class EdgeR(BaseEstimator, SelectorMixin):
         TMM normalization reference sample feature vector.
     """
 
-    def __init__(self, k='all', lfc=0, robust=True, prior_count=1,
+    def __init__(self, k='all', fc=1, robust=True, prior_count=1,
                  model_batch=False, memory=None):
         self.k = k
-        self.lfc = lfc
+        self.fc = fc
         self.robust = robust
         self.prior_count = prior_count
         self.model_batch = model_batch
@@ -298,12 +291,11 @@ class EdgeR(BaseEstimator, SelectorMixin):
             Training counts data matrix.
 
         y : array-like, shape = (n_samples,)
-            Target vector (class labels in classification, real numbers in
-            regression).
+            Training sample class labels.
 
-        y_meta : array-like, list, pandas.DataFrame, pandas.Series,
+        y_meta : array-like, list, pandas.DataFrame, pandas.Series, \
             (default = None), shape = (n_samples, n_metadata)
-            Target metadata.
+            Training sample metadata.
 
         Returns
         -------
@@ -317,7 +309,7 @@ class EdgeR(BaseEstimator, SelectorMixin):
             y_meta = robjects.NULL
         self.pvals_, self.padjs_, self._log_cpms, self.ref_sample_ = (
             memory.cache(edger_feature_score)(
-                X, y, y_meta=y_meta, lfc=self.lfc, robust=self.robust,
+                X, y, y_meta=y_meta, lfc=np.log2(self.fc), robust=self.robust,
                 prior_count=self.prior_count, model_batch=self.model_batch))
         return self
 
@@ -326,12 +318,12 @@ class EdgeR(BaseEstimator, SelectorMixin):
         Parameters
         ----------
         X : array-like, shape = (n_samples, n_features)
-            Counts data matrix.
+            Input counts data matrix.
 
         Returns
         -------
-        X_r : array of shape (n_samples, n_selected_features)
-            edgeR TMM normalized log-CPM transformed input data matrix with
+        Xr : array of shape (n_samples, n_selected_features)
+            edgeR TMM normalized log-CPM transformed counts data matrix with
             only the selected features.
         """
         check_is_fitted(self, '_log_cpms')
@@ -339,8 +331,7 @@ class EdgeR(BaseEstimator, SelectorMixin):
         if hasattr(self, '_train_done'):
             memory = check_memory(self.memory)
             X = memory.cache(edger_tmm_logcpm_transform)(
-                X, ref_sample=self.ref_sample_,
-                prior_count=self.prior_count)[0]
+                X, ref_sample=self.ref_sample_, prior_count=self.prior_count)
         else:
             X = self._log_cpms
             self._train_done = True
@@ -351,11 +342,11 @@ class EdgeR(BaseEstimator, SelectorMixin):
         Parameters
         ----------
         X : array-like, shape = (n_samples, n_features)
-            Input data matrix.
+            Input transformed data matrix.
 
         Returns
         -------
-        X_r : array of shape (n_samples, n_original_features)
+        Xr : array of shape (n_samples, n_original_features)
             `X` with columns of zeros inserted where features would have
             been removed by :meth:`transform`.
         """
@@ -367,6 +358,9 @@ class EdgeR(BaseEstimator, SelectorMixin):
                 "k should be 0 <= k <= n_features; got %r."
                 "Use k='all' to return all features."
                 % self.k)
+        if self.fc < 1:
+            raise ValueError(
+                "fold change threshold should be >= 1; got %r." % self.fc)
 
     def _get_support_mask(self):
         check_is_fitted(self, 'pvals_')
@@ -379,22 +373,30 @@ class EdgeR(BaseEstimator, SelectorMixin):
 
 
 class EdgeRFilterByExpr(BaseEstimator, SelectorMixin):
-    """edgeR filterByExpr feature selector for RNA-seq count data
+    """edgeR filterByExpr feature selector for count data
+
+    Parameters
+    ----------
+    model_batch : bool (default = False)
+        Model batch effect if y_meta passed to fit and Batch column exists.
     """
 
-    def __init__(self):
-        pass
+    def __init__(self, model_batch=False):
+        self.model_batch = model_batch
 
-    def fit(self, X, y):
+    def fit(self, X, y, y_meta=None):
         """
         Parameters
         ----------
         X : array-like, shape = (n_samples, n_features)
-            Counts data matrix.
+            Training counts data matrix.
 
         y : array-like, shape = (n_samples,)
-            Target vector (class labels in classification, real numbers in
-            regression).
+            Training sample class labels.
+
+        y_meta : array-like, list, pandas.DataFrame, pandas.Series, \
+            (default = None), shape = (n_samples, n_metadata)
+            Training sample metadata.
 
         Returns
         -------
@@ -402,7 +404,10 @@ class EdgeRFilterByExpr(BaseEstimator, SelectorMixin):
             Returns self.
         """
         X, y = check_X_y(X, y, dtype=int)
-        self._mask = np.array(r_edger_filterbyexpr_mask(X, y), dtype=bool)
+        if y_meta is None:
+            y_meta = robjects.NULL
+        self._mask = np.array(r_edger_filterbyexpr_mask(
+            X, y, y_meta=y_meta, model_batch=self.model_batch), dtype=bool)
         return self
 
     def _get_support_mask(self):
@@ -420,12 +425,12 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
         Number of top features to select. The "all" option bypasses selection,
         for use in a parameter search.
 
-    lfc : float (default = 0)
-        treat absolute log fold-change minimum threshold.  Default value
-        of 0 gives eBayes results.
+    fc : float (default = 1.0)
+        treat absolute fold change minimum threshold.  Default value of 1.0
+        gives eBayes results.
 
     robust : bool (default = True)
-        limma treat/eBayes robust option
+        limma treat/eBayes robust option.
 
     prior_count : int (default = 1)
         Average count to add to each observation to avoid taking log of zero.
@@ -433,11 +438,11 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
         counts and more shrinkage of the corresponding log fold changes.
 
     model_batch : bool (default = False)
-        Model batch effect if y_meta passed to fit and Batch column exists
+        Model batch effect if y_meta passed to fit and Batch column exists.
 
     model_dupcor : bool (default = False)
         Model limma duplicateCorrelation if y_meta passed to fit and Group
-        column exists
+        column exists.
 
     memory : None, str or object with the joblib.Memory interface \
         (default = None)
@@ -456,10 +461,10 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
         TMM normalization reference sample feature vector.
     """
 
-    def __init__(self, k='all', lfc=0, robust=True, prior_count=1,
+    def __init__(self, k='all', fc=1, robust=True, prior_count=1,
                  model_batch=False, model_dupcor=False, memory=None):
         self.k = k
-        self.lfc = lfc
+        self.fc = fc
         self.robust = robust
         self.prior_count = prior_count
         self.model_batch = model_batch
@@ -474,12 +479,11 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
             Training counts data matrix.
 
         y : array-like, shape = (n_samples,)
-            Target vector (class labels in classification, real numbers in
-            regression).
+            Training sample class labels.
 
-        y_meta : array-like, list, pandas.DataFrame, pandas.Series,
+        y_meta : array-like, list, pandas.DataFrame, pandas.Series, \
             (default = None), shape = (n_samples, n_metadata)
-            Target metadata.
+            Training sample metadata.
 
         Returns
         -------
@@ -493,7 +497,7 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
             y_meta = robjects.NULL
         self.pvals_, self.padjs_, self._log_cpms, self.ref_sample_ = (
             memory.cache(limma_voom_feature_score)(
-                X, y, y_meta=y_meta, lfc=self.lfc, robust=self.robust,
+                X, y, y_meta=y_meta, lfc=np.log2(self.fc), robust=self.robust,
                 prior_count=self.prior_count, model_batch=self.model_batch,
                 model_dupcor=self.model_dupcor))
         return self
@@ -503,12 +507,12 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
         Parameters
         ----------
         X : array-like, shape = (n_samples, n_features)
-            Count data matrix.
+            Input counts data matrix.
 
         Returns
         -------
-        X_r : array of shape (n_samples, n_selected_features)
-            edgeR TMM normalized log-CPM transformed input data matrix with
+        Xr : array of shape (n_samples, n_selected_features)
+            edgeR TMM normalized log-CPM transformed counts data matrix with
             only the selected features.
         """
         check_is_fitted(self, '_log_cpms')
@@ -516,8 +520,7 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
         if hasattr(self, '_train_done'):
             memory = check_memory(self.memory)
             X = memory.cache(edger_tmm_logcpm_transform)(
-                X, ref_sample=self.ref_sample_,
-                prior_count=self.prior_count)[0]
+                X, ref_sample=self.ref_sample_, prior_count=self.prior_count)
         else:
             X = self._log_cpms
             self._train_done = True
@@ -528,11 +531,11 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
         Parameters
         ----------
         X : array-like, shape = (n_samples, n_features)
-            Input data matrix.
+            Input transformed data matrix.
 
         Returns
         -------
-        X_r : array of shape (n_samples, n_original_features)
+        Xr : array of shape (n_samples, n_original_features)
             `X` with columns of zeros inserted where features would have
             been removed by :meth:`transform`.
         """
@@ -544,6 +547,9 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
                 "k should be 0 <= k <= n_features; got %r."
                 "Use k='all' to return all features."
                 % self.k)
+        if self.fc < 1:
+            raise ValueError(
+                "fold change threshold should be >= 1; got %r." % self.fc)
 
     def _get_support_mask(self):
         check_is_fitted(self, 'pvals_')
@@ -565,8 +571,8 @@ class DreamVoom(BaseEstimator, SelectorMixin):
         Number of top features to select. The "all" option bypasses selection,
         for use in a parameter search.
 
-    lfc : float (default = 0)
-        topTable absolute log fold-change minimum threshold.
+    fc : float (default = 1.0)
+        Absolute fold-change minimum threshold.
 
     prior_count : int (default = 1)
         Average count to add to each observation to avoid taking log of zero.
@@ -574,7 +580,7 @@ class DreamVoom(BaseEstimator, SelectorMixin):
         counts and more shrinkage of the corresponding log fold changes.
 
     model_batch : bool (default = False)
-        Model batch effect if y_meta passed to fit and Batch column exists
+        Model batch effect if y_meta passed to fit and Batch column exists.
 
     n_threads : int (default = 1)
         Number of dream parallel threads. This should be carefully selected
@@ -598,10 +604,10 @@ class DreamVoom(BaseEstimator, SelectorMixin):
         TMM normalization reference sample feature vector.
     """
 
-    def __init__(self, k='all', lfc=0, prior_count=1, model_batch=False,
+    def __init__(self, k='all', fc=1, prior_count=1, model_batch=False,
                  n_threads=1, memory=None):
         self.k = k
-        self.lfc = lfc
+        self.fc = fc
         self.prior_count = prior_count
         self.model_batch = model_batch
         self.n_threads = n_threads
@@ -615,12 +621,11 @@ class DreamVoom(BaseEstimator, SelectorMixin):
             Training counts data matrix.
 
         y : array-like, shape = (n_samples,)
-            Target vector (class labels in classification, real numbers in
-            regression).
+            Training sample class labels.
 
-        y_meta : array-like, list, pandas.DataFrame, pandas.Series,
+        y_meta : array-like, list, pandas.DataFrame, pandas.Series, \
             shape = (n_samples, n_metadata)
-            Target metadata.
+            Training sample metadata.
 
         Returns
         -------
@@ -632,8 +637,9 @@ class DreamVoom(BaseEstimator, SelectorMixin):
         memory = check_memory(self.memory)
         self.pvals_, self.padjs_, self._log_cpms, self.ref_sample_ = (
             memory.cache(dream_voom_feature_score)(
-                X, y, y_meta, lfc=self.lfc, prior_count=self.prior_count,
-                model_batch=self.model_batch, n_threads=self.n_threads))
+                X, y, y_meta, lfc=np.log2(self.fc),
+                prior_count=self.prior_count, model_batch=self.model_batch,
+                n_threads=self.n_threads))
         return self
 
     def transform(self, X):
@@ -641,12 +647,12 @@ class DreamVoom(BaseEstimator, SelectorMixin):
         Parameters
         ----------
         X : array-like, shape = (n_samples, n_features)
-            Counts data matrix.
+            Input counts data matrix.
 
         Returns
         -------
-        X_r : array of shape (n_samples, n_selected_features)
-            edgeR TMM normalized log-CPM transformed input data matrix with
+        Xr : array of shape (n_samples, n_selected_features)
+            edgeR TMM normalized log-CPM transformed counts data matrix with
             only the selected features.
         """
         check_is_fitted(self, '_log_cpms')
@@ -654,8 +660,7 @@ class DreamVoom(BaseEstimator, SelectorMixin):
         if hasattr(self, '_train_done'):
             memory = check_memory(self.memory)
             X = memory.cache(edger_tmm_logcpm_transform)(
-                X, ref_sample=self.ref_sample_,
-                prior_count=self.prior_count)[0]
+                X, ref_sample=self.ref_sample_, prior_count=self.prior_count)
         else:
             X = self._log_cpms
             self._train_done = True
@@ -666,11 +671,11 @@ class DreamVoom(BaseEstimator, SelectorMixin):
         Parameters
         ----------
         X : array-like, shape = (n_samples, n_features)
-            Input data matrix.
+            Input transformed data matrix.
 
         Returns
         -------
-        X_r : array of shape (n_samples, n_original_features)
+        Xr : array of shape (n_samples, n_original_features)
             `X` with columns of zeros inserted where features would have
             been removed by :meth:`transform`.
         """
@@ -682,6 +687,9 @@ class DreamVoom(BaseEstimator, SelectorMixin):
                 "k should be 0 <= k <= n_features; got %r."
                 "Use k='all' to return all features."
                 % self.k)
+        if self.fc < 1:
+            raise ValueError(
+                "fold change threshold should be >= 1; got %r." % self.fc)
 
     def _get_support_mask(self):
         check_is_fitted(self, 'pvals_')
@@ -698,9 +706,9 @@ class LimmaScorerClassification(BaseScorer):
 
     Parameters
     ----------
-    lfc : float (default = 0)
-        treat absolute log fold-change minimum threshold.  Default value
-        of 0 gives eBayes results.
+    fc : float (default = 1.0)
+        treat absolute fold change minimum threshold.  Default value of 1.0
+        gives eBayes results.
 
     robust : bool (default = False)
         limma treat/eBayes robust option
@@ -720,26 +728,25 @@ class LimmaScorerClassification(BaseScorer):
         Feature adjusted p-values.
     """
 
-    def __init__(self, lfc=0, robust=False, trend=False, model_batch=False):
-        self.lfc = lfc
+    def __init__(self, fc=1, robust=False, trend=False, model_batch=False):
+        self.fc = fc
         self.robust = robust
         self.trend = trend
         self.model_batch = model_batch
 
     def fit(self, X, y, y_meta=None):
-        """Run scorer on (X, y).
-
+        """
         Parameters
         ----------
         X : array_like, shape (n_samples, n_features)
-            Feature data matrix.
+            Training feature data matrix.
 
         y : array_like, shape (n_samples,)
-            Target vector.
+            Training sample class labels.
 
-        y_meta : array-like, list, pandas.DataFrame, pandas.Series,
+        y_meta : array-like, list, pandas.DataFrame, pandas.Series, \
             (default = None), shape = (n_samples, n_metadata)
-            Target metadata.
+            Target sample metadata.
 
         Returns
         -------
@@ -749,16 +756,18 @@ class LimmaScorerClassification(BaseScorer):
         self._check_params(X, y)
         if y_meta is None:
             y_meta = robjects.NULL
-        pvals, padjs = r_limma_feature_score(
-            X, y, y_meta=y_meta, lfc=self.lfc, robust=self.robust,
+        pv, pa = r_limma_feature_score(
+            X, y, y_meta=y_meta, lfc=np.log2(self.fc), robust=self.robust,
             trend=self.trend, model_batch=self.model_batch)
         # convert to scores for sklearn Select* feature selectors
-        self.scores_ = np.reciprocal(np.array(pvals, dtype=float))
-        self.pvalues_ = np.array(padjs, dtype=float)
+        self.scores_ = np.reciprocal(np.array(pv, dtype=float))
+        self.pvalues_ = np.array(pa, dtype=float)
         return self
 
     def _check_params(self, X, y):
-        pass
+        if self.fc < 1:
+            raise ValueError(
+                "fold change threshold should be >= 1; got %r." % self.fc)
 
 
 class ColumnSelector(BaseEstimator, SelectorMixin):
@@ -789,10 +798,10 @@ class ColumnSelector(BaseEstimator, SelectorMixin):
         Parameters
         ----------
         X : array-like, shape = (n_samples, n_features)
-            The training input samples.
+            Training input data matrix.
 
         y : array-like, shape = (n_samples)
-            The target values (class labels in classification, real numbers in
+            Target values (class labels in classification, real numbers in
             regression).
 
         Returns
@@ -841,10 +850,10 @@ class CFS(BaseEstimator, SelectorMixin):
         Parameters
         ----------
         X : array-like, shape = (n_samples, n_features)
-            The training input samples.
+            Training input data matrix.
 
         y : array-like, shape = (n_samples)
-            The target values (class labels in classification, real numbers in
+            Target values (class labels in classification, real numbers in
             regression).
 
         Returns
@@ -904,10 +913,10 @@ class FCBF(BaseEstimator, SelectorMixin):
         Parameters
         ----------
         X : array-like, shape = (n_samples, n_features)
-            The training input samples.
+            Training input data matrix.
 
         y : array-like, shape = (n_samples)
-            The target values (class labels in classification, real numbers in
+            Target values (class labels in classification, real numbers in
             regression).
 
         Returns
@@ -953,7 +962,7 @@ class ReliefF(BaseEstimator, SelectorMixin):
 
     Parameters
     ----------
-    k : int or "all" (default = 10)
+    k : int or "all" (default = "all")
         Number of top features to select. The "all" option bypasses selection,
         for use in a parameter search.
 
@@ -974,7 +983,7 @@ class ReliefF(BaseEstimator, SelectorMixin):
         Feature scores
     """
 
-    def __init__(self, k=10, n_neighbors=10, sample_size=5, memory=None):
+    def __init__(self, k='all', n_neighbors=10, sample_size=5, memory=None):
         self.k = k
         self.n_neighbors = n_neighbors
         self.sample_size = sample_size
@@ -985,10 +994,10 @@ class ReliefF(BaseEstimator, SelectorMixin):
         Parameters
         ----------
         X : array-like, shape = (n_samples, n_features)
-            The training input samples.
+            Training input data matrix.
 
         y : array-like, shape = (n_samples)
-            The target values (class labels in classification, real numbers in
+            Target values (class labels in classification, real numbers in
             regression).
 
         Returns

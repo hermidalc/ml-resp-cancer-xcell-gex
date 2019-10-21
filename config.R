@@ -28,6 +28,7 @@ dataset_names <- c(
     "gse121810",
     "gse123728",
     "miao",
+    "nci_sb_act_skcm",
     "ovarian",
     "radiation",
     "schalper",
@@ -36,7 +37,7 @@ dataset_names <- c(
     "vanallen_sd1",
     "zhao"
 )
-rna_seq_dataset_names <- c(
+count_dataset_names <- c(
     "gse78220",
     "gse91061_sd0",
     "gse91061_sd1",
@@ -48,6 +49,7 @@ rna_seq_dataset_names <- c(
     "gse115821",
     "gse121810",
     "miao",
+    "nci_sb_act_skcm",
     "ovarian",
     "tcga_skcm",
     "vanallen_sd0",
@@ -68,6 +70,10 @@ data_types <- c(
     "gex_tmb",
     "tmb",
     "xcell"
+)
+meta_types <- c(
+    "sd0",
+    "sd1"
 )
 norm_methods <- c(
     "none",
@@ -131,6 +137,8 @@ common_pheno_names <- c(
     "Class"
 )
 pdata_cls_name <- "Class"
+pdata_bat_name <- "Batch"
+pdata_grp_name <- "Group"
 wes_tmb_feat_name <- "WES-TMB"
 gex_cyt_feat_name <- "GEX-CYT"
 matfact_k <- 20

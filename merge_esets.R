@@ -3,7 +3,9 @@
 options(warn=1)
 suppressPackageStartupMessages(library("argparse"))
 suppressPackageStartupMessages(library("Biobase"))
-source("config.R")
+
+proj_root_dir <- dirname(sys.frame(1)$ofile)
+source(paste(proj_root_dir, "config.R", sep="/"))
 
 parser <- ArgumentParser()
 parser$add_argument("--dataset-tr", type="character", nargs="+", help="dataset tr")
