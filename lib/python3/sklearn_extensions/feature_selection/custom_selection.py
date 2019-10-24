@@ -772,27 +772,19 @@ class LimmaScorerClassification(BaseScorer):
 
 
 class ColumnSelector(BaseEstimator, SelectorMixin):
-    """Manual column feature selector
+    """Column feature selector
 
     Parameters
     ----------
     cols : array-like (default = None)
         A list specifying the feature indices to be selected. For example,
-        [1, 4, 5] to select the 2nd, 5th, and 6th feature columns.
+        [1, 4, 5] to select the 2nd, 5th, and 6th feature columns, and
+        ['A','C','D'] to select the name of feature columns A, C and D.
         If None, returns all columns in the array.
-
-    drop_axis : bool (default = False)
-        Drops last axis if True and the only one column is selected. This
-        is useful, e.g., when the ColumnSelector is used for selecting
-        only one column and the resulting array should be fed to e.g.,
-        a scikit-learn column selector. E.g., instead of returning an
-        array with shape (n_samples, 1), drop_axis=True will return an
-        aray with shape (n_samples,).
     """
 
-    def __init__(self, cols=None, drop_axis=False):
+    def __init__(self, cols=None):
         self.cols = cols
-        self.drop_axis = drop_axis
 
     def fit(self, X, y):
         """
@@ -812,26 +804,36 @@ class ColumnSelector(BaseEstimator, SelectorMixin):
         """
         X, y = check_X_y(X, y, dtype=None)
         self._check_params(X, y)
-        self._n_features = X.shape[1]
+        if self.cols is None:
+            mask = np.ones(X.shape[1], dtype=bool)
+        elif hasattr(X, 'iloc') and isinstance(self.cols[0], str):
+            mask = X.columns.isin(self.cols)
+        else:
+            mask = np.zeros(X.shape[1], dtype=bool)
+            mask[list(self.cols)] = True
+        self._mask = mask
         return self
 
     def _check_params(self, X, y):
         if self.cols is not None:
-            for col in self.cols:
-                if not 0 <= col <= X.shape[1]:
-                    raise ValueError(
-                        "cols should be 0 <= col <= n_features; got %r."
-                        "Use cols=None to return all features."
-                        % col)
+            types = {type(i) for i in self.cols}
+            if len(types) > 1:
+                raise ValueError("cols should be all of the same data type.")
+            if hasattr(X, 'iloc') and isinstance(self.cols[0], str):
+                for col in self.cols:
+                    if col not in X:
+                        raise ValueError("'%r' column does not exist." % col)
+            else:
+                for col in self.cols:
+                    if not 0 <= col <= X.shape[1]:
+                        raise ValueError(
+                            "cols should be 0 <= col <= n_features; got %r."
+                            "Use cols=None to return all features."
+                            % col)
 
     def _get_support_mask(self):
-        check_is_fitted(self, '_n_features')
-        if self.cols is None:
-            mask = np.ones(self._n_features, dtype=bool)
-        else:
-            mask = np.zeros(self._n_features, dtype=bool)
-            mask[list(self.cols)] = True
-        return mask
+        check_is_fitted(self, '_mask')
+        return self._mask
 
 
 class CFS(BaseEstimator, SelectorMixin):
