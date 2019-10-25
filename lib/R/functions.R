@@ -322,7 +322,7 @@ limma_remove_ba_fit <- function(X, y_meta, preserve_design=TRUE) {
         y_meta$Class <- as.factor(y_meta$Class)
         design <- model.matrix(~Class, data=y_meta)
     } else {
-        design <- matrix(1, ncol(X), 1)
+        design <- matrix(1, ncol(t(X)), 1)
     }
     batch <- as.factor(batch)
     contrasts(batch) <- contr.sum(levels(batch))

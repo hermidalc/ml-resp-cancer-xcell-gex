@@ -42,7 +42,7 @@ def edger_tmm_logcpm_transform(X, ref_sample, prior_count):
         X, ref_sample=ref_sample, prior_count=prior_count), dtype=float)
 
 
-class DESeq2RLEVST(TransformerMixin, BaseEstimator):
+class DESeq2RLEVST(BaseEstimator, TransformerMixin):
     """DESeq2 median-of-ratios normalization and VST transformation for count
     data
 
@@ -150,7 +150,7 @@ class DESeq2RLEVST(TransformerMixin, BaseEstimator):
         raise NotImplementedError("inverse_transform not implemented.")
 
 
-class EdgeRTMMLogCPM(TransformerMixin, BaseEstimator):
+class EdgeRTMMLogCPM(BaseEstimator, TransformerMixin):
     """edgeR TMM normalization and log-CPM transformation for count data
 
     Parameters
@@ -227,7 +227,7 @@ class EdgeRTMMLogCPM(TransformerMixin, BaseEstimator):
         raise NotImplementedError("inverse_transform not implemented.")
 
 
-class LimmaRemoveBatchEffectTransformer(TransformerMixin, BaseEstimator):
+class LimmaRemoveBatchEffect(BaseEstimator, TransformerMixin):
     """limma removeBatchEffect transformer for log-transformed expression data
 
     Parameters

@@ -1,3 +1,4 @@
+# adapted from Biocomb source code to use FSelectorRcpp
 select.fast.filter <- function(matrix, disc.method, threshold, attrs.nominal) {
 
     CalcGain <- function(m1, m2, symm) {

@@ -134,7 +134,8 @@ filt_types <- c(
 )
 common_pheno_names <- c(
     "Batch",
-    "Class"
+    "Class",
+    "Group",
 )
 pdata_cls_name <- "Class"
 pdata_bat_name <- "Batch"
