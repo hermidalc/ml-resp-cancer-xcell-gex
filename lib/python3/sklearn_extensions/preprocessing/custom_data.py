@@ -3,9 +3,10 @@ import numpy as np
 import rpy2.robjects as robjects
 from rpy2.robjects.packages import importr
 from rpy2.robjects import numpy2ri
-from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.base import BaseEstimator
 from sklearn.utils import check_array, check_X_y
 from sklearn.utils.validation import check_is_fitted, check_memory
+from ..base import TransformerMixin
 
 r_base = importr('base')
 r_base.source(sys.path[0] + '/lib/R/functions.R')
@@ -111,7 +112,7 @@ class DESeq2RLEVST(BaseEstimator, TransformerMixin):
              model_batch=self.model_batch)
         return self
 
-    def transform(self, X):
+    def transform(self, X, y_meta=None):
         """
         Parameters
         ----------
@@ -136,7 +137,7 @@ class DESeq2RLEVST(BaseEstimator, TransformerMixin):
             self._train_done = True
         return X
 
-    def inverse_transform(self, X):
+    def inverse_transform(self, X, y_meta=None):
         """
         Parameters
         ----------
@@ -284,7 +285,7 @@ class LimmaRemoveBatchEffect(BaseEstimator, TransformerMixin):
                      dtype=float)
         return X
 
-    def inverse_transform(self, X):
+    def inverse_transform(self, X, y_meta=None):
         """
         Parameters
         ----------

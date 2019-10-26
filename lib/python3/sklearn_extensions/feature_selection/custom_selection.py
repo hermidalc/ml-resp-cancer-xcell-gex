@@ -6,9 +6,9 @@ from rpy2.rinterface import RRuntimeWarning
 from rpy2.robjects.packages import importr
 from rpy2.robjects import numpy2ri
 from sklearn.base import BaseEstimator
-from sklearn.feature_selection.base import SelectorMixin
 from sklearn.utils import check_array, check_X_y
 from sklearn.utils.validation import check_is_fitted, check_memory
+from .base import SelectorMixin
 from .univariate_selection import BaseScorer
 
 r_base = importr('base')
@@ -173,7 +173,7 @@ class DESeq2(BaseEstimator, SelectorMixin):
              n_threads=self.n_threads)
         return self
 
-    def transform(self, X):
+    def transform(self, X, y_meta=None):
         """
         Parameters
         ----------
@@ -198,7 +198,7 @@ class DESeq2(BaseEstimator, SelectorMixin):
             self._train_done = True
         return super().transform(X)
 
-    def inverse_transform(self, X):
+    def inverse_transform(self, X, y_meta=None):
         """
         Parameters
         ----------
@@ -314,7 +314,7 @@ class EdgeR(BaseEstimator, SelectorMixin):
                 prior_count=self.prior_count, model_batch=self.model_batch))
         return self
 
-    def transform(self, X):
+    def transform(self, X, y_meta=None):
         """
         Parameters
         ----------
@@ -338,7 +338,7 @@ class EdgeR(BaseEstimator, SelectorMixin):
             self._train_done = True
         return super().transform(X)
 
-    def inverse_transform(self, X):
+    def inverse_transform(self, X, y_meta=None):
         """
         Parameters
         ----------
@@ -410,6 +410,37 @@ class EdgeRFilterByExpr(BaseEstimator, SelectorMixin):
         self._mask = np.array(r_edger_filterbyexpr_mask(
             X, y, y_meta=y_meta, model_batch=self.model_batch), dtype=bool)
         return self
+
+    def transform(self, X, y_meta=None):
+        """
+        Parameters
+        ----------
+        X : array-like, shape = (n_samples, n_features)
+            Input counts data matrix.
+
+        Returns
+        -------
+        Xr : array of shape (n_samples, n_selected_features)
+            edgeR filterByExpr counts data matrix with only the selected
+            features.
+        """
+        check_is_fitted(self, '_mask')
+        return super().transform(X)
+
+    def inverse_transform(self, X, y_meta=None):
+        """
+        Parameters
+        ----------
+        X : array-like, shape = (n_samples, n_features)
+            Input transformed data matrix.
+
+        Returns
+        -------
+        Xr : array of shape (n_samples, n_original_features)
+            `X` with columns of zeros inserted where features would have
+            been removed by :meth:`transform`.
+        """
+        raise NotImplementedError("inverse_transform not implemented.")
 
     def _get_support_mask(self):
         check_is_fitted(self, '_mask')
@@ -503,7 +534,7 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
                 model_dupcor=self.model_dupcor))
         return self
 
-    def transform(self, X):
+    def transform(self, X, y_meta=None):
         """
         Parameters
         ----------
@@ -527,7 +558,7 @@ class LimmaVoom(BaseEstimator, SelectorMixin):
             self._train_done = True
         return super().transform(X)
 
-    def inverse_transform(self, X):
+    def inverse_transform(self, X, y_meta=None):
         """
         Parameters
         ----------
@@ -643,7 +674,7 @@ class DreamVoom(BaseEstimator, SelectorMixin):
                 n_threads=self.n_threads))
         return self
 
-    def transform(self, X):
+    def transform(self, X, y_meta=None):
         """
         Parameters
         ----------
@@ -667,7 +698,7 @@ class DreamVoom(BaseEstimator, SelectorMixin):
             self._train_done = True
         return super().transform(X)
 
-    def inverse_transform(self, X):
+    def inverse_transform(self, X, y_meta=None):
         """
         Parameters
         ----------

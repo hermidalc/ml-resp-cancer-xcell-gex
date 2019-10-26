@@ -1,3 +1,7 @@
+# Authors: Leandro Hermida <hermidal@cs.umd.edu>
+#
+# License: BSD 3 clause
+
 import numpy as np
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.utils.validation import check_array

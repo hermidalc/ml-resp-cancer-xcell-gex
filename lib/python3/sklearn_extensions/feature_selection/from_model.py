@@ -1,14 +1,13 @@
-# Authors: Gilles Louppe, Mathieu Blondel, Maheshakya Wijewardena
+# Authors: Gilles Louppe, Mathieu Blondel, Maheshakya Wijewardena,
+#          Leandro Hermida
 # License: BSD 3 clause
 
-import numpy as np
 import six
-
-from sklearn.feature_selection.base import SelectorMixin
+import numpy as np
 from sklearn.base import BaseEstimator, clone, MetaEstimatorMixin
-
 from sklearn.exceptions import NotFittedError
 from sklearn.utils.metaestimators import if_delegate_has_method
+from .base import SelectorMixin
 
 
 def _get_feature_importances(estimator, norm_order=1):

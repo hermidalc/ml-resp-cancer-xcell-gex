@@ -8,7 +8,7 @@
 """Recursive feature elimination for feature ranking"""
 
 import numpy as np
-from joblib import Parallel, delayed, effective_n_jobs
+from sklearn.utils._joblib import Parallel, delayed, effective_n_jobs
 from sklearn.utils import check_X_y, safe_sqr
 from sklearn.utils.metaestimators import if_delegate_has_method
 from sklearn.utils.metaestimators import _safe_split
@@ -18,9 +18,9 @@ from sklearn.base import MetaEstimatorMixin
 from sklearn.base import clone
 from sklearn.base import is_classifier
 from sklearn.model_selection import check_cv
-from sklearn.model_selection._validation import _score
-from sklearn.metrics.scorer import check_scoring
-from sklearn.feature_selection.base import SelectorMixin
+from ..model_selection._validation import _score
+from ..metrics.scorer import check_scoring
+from .base import SelectorMixin
 
 
 def _rfe_single_fit(rfe, estimator, X, y, train, test, scorer):
