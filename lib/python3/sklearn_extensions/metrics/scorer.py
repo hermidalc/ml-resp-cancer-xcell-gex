@@ -66,7 +66,7 @@ class _BaseScorer(metaclass=ABCMeta):
 
 class _PredictScorer(_BaseScorer):
     def __call__(self, estimator, X, y_true, sample_weight=None,
-                 **predict_params):
+                 **transform_params):
         """Evaluate predicted target values for X relative to y_true.
 
         Parameters
@@ -90,7 +90,7 @@ class _PredictScorer(_BaseScorer):
             Score function applied to prediction of estimator on X.
         """
 
-        y_pred = estimator.predict(X, **predict_params)
+        y_pred = estimator.predict(X, **transform_params)
         if sample_weight is not None:
             return self._sign * self._score_func(y_true, y_pred,
                                                  sample_weight=sample_weight,
@@ -101,7 +101,7 @@ class _PredictScorer(_BaseScorer):
 
 
 class _ProbaScorer(_BaseScorer):
-    def __call__(self, clf, X, y, sample_weight=None, **predict_params):
+    def __call__(self, clf, X, y, sample_weight=None, **transform_params):
         """Evaluate predicted probabilities for X relative to y_true.
 
         Parameters
@@ -126,7 +126,7 @@ class _ProbaScorer(_BaseScorer):
             Score function applied to prediction of estimator on X.
         """
         y_type = type_of_target(y)
-        y_pred = clf.predict_proba(X, **predict_params)
+        y_pred = clf.predict_proba(X, **transform_params)
         if y_type == "binary":
             if y_pred.shape[1] == 2:
                 y_pred = y_pred[:, 1]
@@ -147,7 +147,7 @@ class _ProbaScorer(_BaseScorer):
 
 
 class _ThresholdScorer(_BaseScorer):
-    def __call__(self, clf, X, y, sample_weight=None, **predict_params):
+    def __call__(self, clf, X, y, sample_weight=None, **transform_params):
         """Evaluate decision function output for X relative to y_true.
 
         Parameters
@@ -178,17 +178,17 @@ class _ThresholdScorer(_BaseScorer):
             raise ValueError("{0} format is not supported".format(y_type))
 
         if is_regressor(clf):
-            y_pred = clf.predict(X, **predict_params)
+            y_pred = clf.predict(X, **transform_params)
         else:
             try:
-                y_pred = clf.decision_function(X, **predict_params)
+                y_pred = clf.decision_function(X, **transform_params)
 
                 # For multi-output multi-class estimator
                 if isinstance(y_pred, list):
                     y_pred = np.vstack([p for p in y_pred]).T
 
             except (NotImplementedError, AttributeError):
-                y_pred = clf.predict_proba(X, **predict_params)
+                y_pred = clf.predict_proba(X, **transform_params)
 
                 if y_type == "binary":
                     if y_pred.shape[1] == 2:

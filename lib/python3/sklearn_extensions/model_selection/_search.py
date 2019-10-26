@@ -400,7 +400,7 @@ class BaseSearchCV(BaseEstimator, MetaEstimatorMixin, metaclass=ABCMeta):
     def _estimator_type(self):
         return self.estimator._estimator_type
 
-    def score(self, X, y=None, **predict_params):
+    def score(self, X, y=None, **transform_params):
         """Returns the score on the given data, if the estimator has been refit.
 
         This uses the score defined by ``scoring`` where provided, and the
@@ -426,7 +426,7 @@ class BaseSearchCV(BaseEstimator, MetaEstimatorMixin, metaclass=ABCMeta):
                              "and the estimator doesn't provide one %s"
                              % self.best_estimator_)
         score = self.scorer_[self.refit] if self.multimetric_ else self.scorer_
-        return score(self.best_estimator_, X, y, **predict_params)
+        return score(self.best_estimator_, X, y, **transform_params)
 
     def _check_is_fitted(self, method_name):
         if not self.refit:
@@ -441,7 +441,7 @@ class BaseSearchCV(BaseEstimator, MetaEstimatorMixin, metaclass=ABCMeta):
             check_is_fitted(self, 'best_estimator_')
 
     @if_delegate_has_method(delegate=('best_estimator_', 'estimator'))
-    def predict(self, X, **predict_params):
+    def predict(self, X, **transform_params):
         """Call predict on the estimator with the best found parameters.
 
         Only available if ``refit=True`` and the underlying estimator supports
@@ -455,10 +455,10 @@ class BaseSearchCV(BaseEstimator, MetaEstimatorMixin, metaclass=ABCMeta):
 
         """
         self._check_is_fitted('predict')
-        return self.best_estimator_.predict(X, **predict_params)
+        return self.best_estimator_.predict(X, **transform_params)
 
     @if_delegate_has_method(delegate=('best_estimator_', 'estimator'))
-    def predict_proba(self, X, **predict_params):
+    def predict_proba(self, X, **transform_params):
         """Call predict_proba on the estimator with the best found parameters.
 
         Only available if ``refit=True`` and the underlying estimator supports
@@ -472,10 +472,10 @@ class BaseSearchCV(BaseEstimator, MetaEstimatorMixin, metaclass=ABCMeta):
 
         """
         self._check_is_fitted('predict_proba')
-        return self.best_estimator_.predict_proba(X, **predict_params)
+        return self.best_estimator_.predict_proba(X, **transform_params)
 
     @if_delegate_has_method(delegate=('best_estimator_', 'estimator'))
-    def predict_log_proba(self, X, **predict_params):
+    def predict_log_proba(self, X, **transform_params):
         """Call predict_log_proba on the estimator with the best found parameters.
 
         Only available if ``refit=True`` and the underlying estimator supports
@@ -489,10 +489,10 @@ class BaseSearchCV(BaseEstimator, MetaEstimatorMixin, metaclass=ABCMeta):
 
         """
         self._check_is_fitted('predict_log_proba')
-        return self.best_estimator_.predict_log_proba(X, **predict_params)
+        return self.best_estimator_.predict_log_proba(X, **transform_params)
 
     @if_delegate_has_method(delegate=('best_estimator_', 'estimator'))
-    def decision_function(self, X, **predict_params):
+    def decision_function(self, X, **transform_params):
         """Call decision_function on the estimator with the best found parameters.
 
         Only available if ``refit=True`` and the underlying estimator supports
@@ -506,7 +506,7 @@ class BaseSearchCV(BaseEstimator, MetaEstimatorMixin, metaclass=ABCMeta):
 
         """
         self._check_is_fitted('decision_function')
-        return self.best_estimator_.decision_function(X, **predict_params)
+        return self.best_estimator_.decision_function(X, **transform_params)
 
     @if_delegate_has_method(delegate=('best_estimator_', 'estimator'))
     def transform(self, X, **transform_params):

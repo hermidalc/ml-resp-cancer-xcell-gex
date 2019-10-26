@@ -590,7 +590,7 @@ class Pipeline(_BaseComposition):
         return Xt
 
     @if_delegate_has_method(delegate='_final_estimator')
-    def score(self, X, y=None, sample_weight=None, **predict_params):
+    def score(self, X, y=None, sample_weight=None, **transform_params):
         """Apply transforms, and score with the final estimator
 
         Parameters
@@ -611,7 +611,7 @@ class Pipeline(_BaseComposition):
         -------
         score : float
         """
-        transform_params_steps = self._make_params_steps(predict_params)
+        transform_params_steps = self._make_params_steps(transform_params)
         Xt = X
         for _, name, transform in self._iter(with_final=False):
             Xt = transform.transform(Xt, **transform_params_steps[name])
@@ -888,7 +888,7 @@ class FeatureUnion(_BaseComposition, TransformerMixin):
                                   trans.get_feature_names()])
         return feature_names
 
-    def fit(self, X, y=None):
+    def fit(self, X, y=None, **fit_params):
         """Fit all transformers using X.
 
         Parameters
@@ -904,7 +904,7 @@ class FeatureUnion(_BaseComposition, TransformerMixin):
         self : FeatureUnion
             This estimator
         """
-        transformers = self._parallel_func(X, y, {}, _fit_one)
+        transformers = self._parallel_func(X, y, fit_params, _fit_one)
         if not transformers:
             # All transformers are None
             return self

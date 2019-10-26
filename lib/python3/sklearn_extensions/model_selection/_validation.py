@@ -498,8 +498,8 @@ def _fit_and_score(estimator, X, y, scorer, train, test, verbose,
     fit_params = fit_params if fit_params is not None else {}
     train_fit_params = {k: _index_param_value(X, v, train)
                         for k, v in fit_params.items()}
-    test_fit_params = {k: _index_param_value(X, v, test)
-                       for k, v in fit_params.items()}
+    test_transform_params = {k: _index_param_value(X, v, test)
+                             for k, v in fit_params.items()}
 
     train_scores = {}
     if parameters is not None:
@@ -557,7 +557,7 @@ def _fit_and_score(estimator, X, y, scorer, train, test, verbose,
         fit_time = time.time() - start_time
         # _score will return dict if is_multimetric is True
         test_scores = _score(estimator, X_test, y_test, scorer, is_multimetric,
-                             **test_fit_params)
+                             **test_transform_params)
         score_time = time.time() - start_time - fit_time
         if return_train_score:
             train_scores = _score(estimator, X_train, y_train, scorer,
@@ -594,7 +594,7 @@ def _fit_and_score(estimator, X, y, scorer, train, test, verbose,
 
 
 def _score(estimator, X_test, y_test, scorer, is_multimetric=False,
-           **predict_params):
+           **transform_params):
     """Compute the score(s) of an estimator on a given test set.
 
     Will return a single float if is_multimetric is False and a dict of floats,
@@ -602,12 +602,12 @@ def _score(estimator, X_test, y_test, scorer, is_multimetric=False,
     """
     if is_multimetric:
         return _multimetric_score(estimator, X_test, y_test, scorer,
-                                  **predict_params)
+                                  **transform_params)
     else:
         if y_test is None:
-            score = scorer(estimator, X_test, **predict_params)
+            score = scorer(estimator, X_test, **transform_params)
         else:
-            score = scorer(estimator, X_test, y_test, **predict_params)
+            score = scorer(estimator, X_test, y_test, **transform_params)
 
         if hasattr(score, 'item'):
             try:
@@ -624,15 +624,15 @@ def _score(estimator, X_test, y_test, scorer, is_multimetric=False,
     return score
 
 
-def _multimetric_score(estimator, X_test, y_test, scorers, **predict_params):
+def _multimetric_score(estimator, X_test, y_test, scorers, **transform_params):
     """Return a dict of score for multimetric scoring"""
     scores = {}
 
     for name, scorer in scorers.items():
         if y_test is None:
-            score = scorer(estimator, X_test, **predict_params)
+            score = scorer(estimator, X_test, **transform_params)
         else:
-            score = scorer(estimator, X_test, y_test, **predict_params)
+            score = scorer(estimator, X_test, y_test, **transform_params)
 
         if hasattr(score, 'item'):
             try:
@@ -872,8 +872,8 @@ def _fit_and_predict(estimator, X, y, train, test, verbose, fit_params,
     fit_params = fit_params if fit_params is not None else {}
     train_fit_params = {k: _index_param_value(X, v, train)
                         for k, v in fit_params.items()}
-    test_fit_params = {k: _index_param_value(X, v, test)
-                       for k, v in fit_params.items()}
+    test_transform_params = {k: _index_param_value(X, v, test)
+                             for k, v in fit_params.items()}
 
     X_train, y_train = _safe_split(estimator, X, y, train)
     X_test, _ = _safe_split(estimator, X, y, test, train)
@@ -883,7 +883,7 @@ def _fit_and_predict(estimator, X, y, train, test, verbose, fit_params,
     else:
         estimator.fit(X_train, y_train, **train_fit_params)
     func = getattr(estimator, method)
-    predictions = func(X_test, **test_fit_params)
+    predictions = func(X_test, **test_transform_params)
     if method in ['decision_function', 'predict_proba', 'predict_log_proba']:
         if isinstance(predictions, list):
             predictions = [_enforce_prediction_order(
@@ -991,7 +991,7 @@ def _index_param_value(X, v, indices):
 
 def permutation_test_score(estimator, X, y, groups=None, cv='warn',
                            n_permutations=100, n_jobs=None, random_state=0,
-                           verbose=0, scoring=None):
+                           verbose=0, scoring=None, **transform_params):
     """Evaluate the significance of a cross-validated score with permutations
 
     Read more in the :ref:`User Guide <cross_validation>`.
@@ -1097,25 +1097,27 @@ def permutation_test_score(estimator, X, y, groups=None, cv='warn',
 
     # We clone the estimator to make sure that all the folds are
     # independent, and that it is pickle-able.
-    score = _permutation_test_score(clone(estimator), X, y, groups, cv, scorer)
+    score = _permutation_test_score(clone(estimator), X, y, groups, cv, scorer,
+                                    **transform_params)
     permutation_scores = Parallel(n_jobs=n_jobs, verbose=verbose)(
         delayed(_permutation_test_score)(
             clone(estimator), X, _shuffle(y, groups, random_state),
-            groups, cv, scorer)
+            groups, cv, scorer, **transform_params)
         for _ in range(n_permutations))
     permutation_scores = np.array(permutation_scores)
     pvalue = (np.sum(permutation_scores >= score) + 1.0) / (n_permutations + 1)
     return score, permutation_scores, pvalue
 
 
-def _permutation_test_score(estimator, X, y, groups, cv, scorer):
+def _permutation_test_score(estimator, X, y, groups, cv, scorer,
+                            **transform_params):
     """Auxiliary function for permutation_test_score"""
     avg_score = []
     for train, test in cv.split(X, y, groups):
         X_train, y_train = _safe_split(estimator, X, y, train)
         X_test, y_test = _safe_split(estimator, X, y, test, train)
         estimator.fit(X_train, y_train)
-        avg_score.append(scorer(estimator, X_test, y_test))
+        avg_score.append(scorer(estimator, X_test, y_test, **transform_params))
     return np.mean(avg_score)
 
 
